@@ -133,3 +133,4 @@ all.config
 # Kdevelop4
 *.kdev4
 arch/arm64/boot/uImage
+trusted-firmware-a/trusted-firmware-a-2.2/
