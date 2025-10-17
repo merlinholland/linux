@@ -7,7 +7,7 @@
  *
  * 10 Apr 1996	Added silly rename for unlink	--okir
  * 28 Sep 1996	Improved directory cache --okir
- * 23 Aug 1997  Claus Heine claus@momo.math.rwth-aachen.de 
+ * 23 Aug 1997  Claus Heine claus@momo.math.rwth-aachen.de
  *              Re-implemented silly rename for unlink, newly implemented
  *              silly rename for nfs_rename() following the suggestions
  *              of Olaf Kirch (okir) found in this file.
@@ -738,7 +738,7 @@ int readdir_search_pagecache(nfs_readdir_descriptor_t *desc)
 /*
  * Once we've found the start of the dirent within a page: fill 'er up...
  */
-static 
+static
 int nfs_do_filldir(nfs_readdir_descriptor_t *desc)
 {
 	struct file	*file = desc->file;
@@ -1453,16 +1453,6 @@ const struct dentry_operations nfs4_dentry_operations = {
 };
 EXPORT_SYMBOL_GPL(nfs4_dentry_operations);
 
-static fmode_t flags_to_mode(int flags)
-{
-	fmode_t res = (__force fmode_t)flags & FMODE_EXEC;
-	if ((flags & O_ACCMODE) != O_WRONLY)
-		res |= FMODE_READ;
-	if ((flags & O_ACCMODE) != O_RDONLY)
-		res |= FMODE_WRITE;
-	return res;
-}
-
 static struct nfs_open_context *create_nfs_open_context(struct dentry *dentry, int open_flags, struct file *filp)
 {
 	return alloc_nfs_open_context(dentry, flags_to_mode(open_flags), filp);
@@ -1602,6 +1592,20 @@ out:
 
 no_open:
 	res = nfs_lookup(dir, dentry, lookup_flags);
+	if (!res) {
+		inode = d_inode(dentry);
+		if ((lookup_flags & LOOKUP_DIRECTORY) && inode &&
+		    !S_ISDIR(inode->i_mode))
+			res = ERR_PTR(-ENOTDIR);
+	} else if (!IS_ERR(res)) {
+		inode = d_inode(res);
+		if ((lookup_flags & LOOKUP_DIRECTORY) && inode &&
+		    !S_ISDIR(inode->i_mode)) {
+			dput(res);
+			res = ERR_PTR(-ENOTDIR);
+		}
+	}
+
 	if (switched) {
 		d_lookup_done(dentry);
 		if (!res)
@@ -1836,7 +1840,7 @@ EXPORT_SYMBOL_GPL(nfs_rmdir);
 
 /*
  * Remove a file after making sure there are no pending writes,
- * and after checking that the file has only one user. 
+ * and after checking that the file has only one user.
  *
  * We invalidate the attribute cache and free the inode prior to the operation
  * to avoid possible races if the server reuses the inode.
@@ -1846,7 +1850,7 @@ static int nfs_safe_remove(struct dentry *dentry)
 	struct inode *dir = d_inode(dentry->d_parent);
 	struct inode *inode = d_inode(dentry);
 	int error = -EBUSY;
-		
+
 	dfprintk(VFS, "NFS: safe_remove(%pd2)\n", dentry);
 
 	/* If the dentry was sillyrenamed, we simply call d_delete() */
@@ -2011,7 +2015,7 @@ EXPORT_SYMBOL_GPL(nfs_link);
  * file in old_dir will go away when the last process iput()s the inode.
  *
  * FIXED.
- * 
+ *
  * It actually works quite well. One needs to have the possibility for
  * at least one ".nfs..." file in each directory the file ever gets
  * moved or linked to which happens automagically with the new

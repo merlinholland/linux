@@ -43,6 +43,7 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/of_address.h>
 
 /*
  * This macro is used to define some register default values.
@@ -135,6 +136,18 @@
 #define SSP_CR1_MASK_TXIFLSEL_ST (0x7UL << 10)
 /* This one is only in the PL023 variant */
 #define SSP_CR1_MASK_FBCLKDEL_ST (0x7UL << 13)
+
+#ifdef CONFIG_ARCH_BSP
+/*
+ * The Vendor version of this block adds some bits
+ * in SSP_CR1
+ */
+#define SSP_CR1_MASK_BIGEND_BSP	(0x1UL << 4)
+#define SSP_CR1_MASK_ALTASENS_BSP	(0x1UL << 6)
+
+#define SSP_TX_FIFO_CR(r)  (r + 0x28)
+#define SSP_RX_FIFO_CR(r)  (r + 0x2C)
+#endif
 
 /*
  * SSP Status Register - SSP_SR
@@ -296,6 +309,10 @@
 
 #define SPI_POLLING_TIMEOUT 1000
 
+#ifdef CONFIG_ARCH_BSP
+#define PL022_IDS_INDEX_BSP		4
+#endif
+
 /*
  * The type of reading going on on this chip
  */
@@ -336,6 +353,15 @@ struct vendor_data {
 	bool loopback;
 	bool internal_cs_ctrl;
 };
+
+#ifdef CONFIG_ARCH_BSP
+struct cs_data {
+	struct resource		res;
+	void __iomem		*virt_addr;
+	unsigned int		cs_sb;
+	unsigned int		cs_mask_bit;
+};
+#endif
 
 /**
  * struct pl022 - This is the private SSP driver data structure
@@ -403,6 +429,9 @@ struct pl022 {
 #endif
 	int cur_cs;
 	int *chipselects;
+#ifdef CONFIG_ARCH_BSP
+	struct cs_data		*cs_data;
+#endif
 };
 
 /**
@@ -459,13 +488,41 @@ static void null_cs_control(u32 command)
 static void internal_cs_control(struct pl022 *pl022, u32 command)
 {
 	u32 tmp;
+#ifdef CONFIG_ARCH_BSP
+	struct amba_device *adev = pl022->adev;
+	struct amba_driver *adrv = container_of(adev->dev.driver,
+			struct amba_driver, drv);
 
-	tmp = readw(SSP_CSR(pl022->virtbase));
-	if (command == SSP_CHIP_SELECT)
-		tmp &= ~BIT(pl022->cur_cs);
-	else
-		tmp |= BIT(pl022->cur_cs);
-	writew(tmp, SSP_CSR(pl022->virtbase));
+	if (pl022->vendor->extended_cr && (adev->periphid ==
+				adrv->id_table[PL022_IDS_INDEX_BSP].id)) {
+		if (pl022->cs_data) {
+			tmp = readl(pl022->cs_data->virt_addr);
+			tmp &= ~(pl022->cs_data->cs_mask_bit);
+			tmp |= ((u32)pl022->cur_cs) << pl022->cs_data->cs_sb;
+			writel(tmp, pl022->cs_data->virt_addr);
+		}
+
+		if (command == SSP_CHIP_SELECT)
+			/* Enable SSP */
+			writew((readw(SSP_CR1(pl022->virtbase)) |
+						SSP_CR1_MASK_SSE),
+					SSP_CR1(pl022->virtbase));
+		else
+			/* disable SSP */
+			writew((readw(SSP_CR1(pl022->virtbase)) &
+						(~SSP_CR1_MASK_SSE)),
+					SSP_CR1(pl022->virtbase));
+	} else {
+#endif
+		tmp = readw(SSP_CSR(pl022->virtbase));
+		if (command == SSP_CHIP_SELECT)
+			tmp &= ~BIT(pl022->cur_cs);
+		else
+			tmp |= BIT(pl022->cur_cs);
+		writew(tmp, SSP_CSR(pl022->virtbase));
+#ifdef CONFIG_ARCH_BSP
+	}
+#endif
 }
 
 static void pl022_cs_control(struct pl022 *pl022, u32 command)
@@ -566,8 +623,16 @@ static int flush(struct pl022 *pl022)
 static void restore_state(struct pl022 *pl022)
 {
 	struct chip_data *chip = pl022->cur_chip;
+#ifdef CONFIG_ARCH_BSP
+	struct amba_device *adev = pl022->adev;
+	struct amba_driver *adrv = container_of(adev->dev.driver,
+			struct amba_driver, drv);
 
+	if (pl022->vendor->extended_cr && (adev->periphid !=
+				adrv->id_table[PL022_IDS_INDEX_BSP].id))
+#else
 	if (pl022->vendor->extended_cr)
+#endif
 		writel(chip->cr0, SSP_CR0(pl022->virtbase));
 	else
 		writew(chip->cr0, SSP_CR0(pl022->virtbase));
@@ -640,6 +705,15 @@ static void restore_state(struct pl022 *pl022)
 	GEN_MASK_BITS(SSP_FEEDBACK_CLK_DELAY_NONE, SSP_CR1_MASK_FBCLKDEL_ST, 13) \
 )
 
+#ifdef CONFIG_ARCH_BSP
+/* Vendor versions extend this register to use all 16 bits */
+#define DEFAULT_SSP_REG_CR1_BSP ( \
+	DEFAULT_SSP_REG_CR1 | \
+	GEN_MASK_BITS(SSP_RX_MSB, SSP_CR1_MASK_BIGEND_BSP, 4) | \
+	GEN_MASK_BITS(0x1, SSP_CR1_MASK_ALTASENS_BSP, 6) \
+)
+#endif
+
 #define DEFAULT_SSP_REG_CPSR ( \
 	GEN_MASK_BITS(SSP_DEFAULT_PRESCALE, SSP_CPSR_MASK_CPSDVSR, 0) \
 )
@@ -659,8 +733,22 @@ static void load_ssp_default_config(struct pl022 *pl022)
 		writel(DEFAULT_SSP_REG_CR0_ST_PL023, SSP_CR0(pl022->virtbase));
 		writew(DEFAULT_SSP_REG_CR1_ST_PL023, SSP_CR1(pl022->virtbase));
 	} else if (pl022->vendor->extended_cr) {
+#ifdef CONFIG_ARCH_BSP
+		struct amba_device *adev = pl022->adev;
+		struct amba_driver *adrv = container_of(adev->dev.driver,
+				struct amba_driver, drv);
+
+		if (adev->periphid == adrv->id_table[PL022_IDS_INDEX_BSP].id) {
+			writew(DEFAULT_SSP_REG_CR0, SSP_CR0(pl022->virtbase));
+			writew(DEFAULT_SSP_REG_CR1_BSP,
+					SSP_CR1(pl022->virtbase));
+		} else {
+#endif
 		writel(DEFAULT_SSP_REG_CR0_ST, SSP_CR0(pl022->virtbase));
 		writew(DEFAULT_SSP_REG_CR1_ST, SSP_CR1(pl022->virtbase));
+#ifdef CONFIG_ARCH_BSP
+		}
+#endif
 	} else {
 		writew(DEFAULT_SSP_REG_CR0, SSP_CR0(pl022->virtbase));
 		writew(DEFAULT_SSP_REG_CR1, SSP_CR1(pl022->virtbase));
@@ -1144,7 +1232,7 @@ static int pl022_dma_probe(struct pl022 *pl022)
 	if (!pl022->dummypage)
 		goto err_no_dummypage;
 
-	dev_info(&pl022->adev->dev, "setup for DMA on RX %s, TX %s\n",
+	dev_dbg(&pl022->adev->dev, "setup for DMA on RX %s, TX %s\n",
 		 dma_chan_name(pl022->dma_rx_channel),
 		 dma_chan_name(pl022->dma_tx_channel));
 
@@ -1803,7 +1891,7 @@ static const struct pl022_config_chip pl022_default_chip_info = {
 	.com_mode = POLLING_TRANSFER,
 	.iface = SSP_INTERFACE_MOTOROLA_SPI,
 	.hierarchy = SSP_SLAVE,
-	.slave_tx_disable = DO_NOT_DRIVE_TX,
+	.slave_tx_disable = DRIVE_TX,
 	.rx_lev_trig = SSP_RX_1_OR_MORE_ELEM,
 	.tx_lev_trig = SSP_TX_1_OR_MORE_EMPTY_LOC,
 	.ctrl_len = SSP_BITS_8,
@@ -1835,6 +1923,13 @@ static int pl022_setup(struct spi_device *spi)
 	unsigned int bits = spi->bits_per_word;
 	u32 tmp;
 	struct device_node *np = spi->dev.of_node;
+#ifdef CONFIG_ARCH_BSP
+	struct amba_device *adev = pl022->adev;
+	struct amba_driver *adrv = container_of(adev->dev.driver,
+			struct amba_driver, drv);
+	writel(0, SSP_TX_FIFO_CR(pl022->virtbase));
+	writel(0, SSP_RX_FIFO_CR(pl022->virtbase));
+#endif
 
 	if (!spi->max_speed_hz)
 		return -EINVAL;
@@ -1856,8 +1951,10 @@ static int pl022_setup(struct spi_device *spi)
 	if (chip_info == NULL) {
 		if (np) {
 			chip_info_dt = pl022_default_chip_info;
-
-			chip_info_dt.hierarchy = SSP_MASTER;
+			if(pl022->master->slave)
+				chip_info_dt.hierarchy = SSP_SLAVE;
+			else
+				chip_info_dt.hierarchy = SSP_MASTER;
 			of_property_read_u32(np, "pl022,interface",
 				&chip_info_dt.iface);
 			of_property_read_u32(np, "pl022,com-mode",
@@ -1977,7 +2074,12 @@ static int pl022_setup(struct spi_device *spi)
 	chip->cpsr = clk_freq.cpsdvsr;
 
 	/* Special setup for the ST micro extended control registers */
+#ifdef CONFIG_ARCH_BSP
+	if (pl022->vendor->extended_cr && (adev->periphid !=
+				adrv->id_table[PL022_IDS_INDEX_BSP].id)) {
+#else
 	if (pl022->vendor->extended_cr) {
+#endif
 		u32 etx;
 
 		if (pl022->vendor->pl023) {
@@ -2011,6 +2113,22 @@ static int pl022_setup(struct spi_device *spi)
 			       SSP_CR1_MASK_RXIFLSEL_ST, 7);
 		SSP_WRITE_BITS(chip->cr1, chip_info->tx_lev_trig,
 			       SSP_CR1_MASK_TXIFLSEL_ST, 10);
+#ifdef CONFIG_ARCH_BSP
+	} else if (pl022->vendor->extended_cr && (adev->periphid ==
+				adrv->id_table[PL022_IDS_INDEX_BSP].id)) {
+		SSP_WRITE_BITS(chip->cr0, bits - 1,
+			       SSP_CR0_MASK_DSS, 0);
+		SSP_WRITE_BITS(chip->cr0, chip_info->iface,
+			       SSP_CR0_MASK_FRF, 4);
+
+		if (spi->mode & SPI_LSB_FIRST)
+			tmp = !!SPI_LSB_FIRST;
+		else
+			tmp = !SPI_LSB_FIRST;
+
+		SSP_WRITE_BITS(chip->cr1, tmp, SSP_CR1_MASK_BIGEND_BSP, 4);
+		SSP_WRITE_BITS(chip->cr1, 0x1, SSP_CR1_MASK_ALTASENS_BSP, 6);
+#endif
 	} else {
 		SSP_WRITE_BITS(chip->cr0, bits - 1,
 			       SSP_CR0_MASK_DSS, 0);
@@ -2099,14 +2217,17 @@ pl022_platform_data_dt_get(struct device *dev)
 static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 {
 	struct device *dev = &adev->dev;
+	struct amba_driver *adrv = container_of(adev->dev.driver,
+			struct amba_driver, drv);
 	struct pl022_ssp_controller *platform_info =
 			dev_get_platdata(&adev->dev);
 	struct spi_master *master;
 	struct pl022 *pl022 = NULL;	/*Data for this driver */
 	struct device_node *np = adev->dev.of_node;
+	unsigned int slave_mode;
 	int status = 0, i, num_cs;
 
-	dev_info(&adev->dev,
+	dev_dbg(&adev->dev,
 		 "ARM PL022 driver, device ID: 0x%08x\n", adev->periphid);
 	if (!platform_info && IS_ENABLED(CONFIG_OF))
 		platform_info = pl022_platform_data_dt_get(dev);
@@ -2155,6 +2276,17 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	master->unprepare_transfer_hardware = pl022_unprepare_transfer_hardware;
 	master->rt = platform_info->rt;
 	master->dev.of_node = dev->of_node;
+	if (of_property_read_u32(np, "vendor,slave_mode",
+				&slave_mode) == 0) {
+		if (slave_mode == 1) {
+			master->slave = true;
+		} else if (slave_mode == 0) {
+			master->slave = false;
+		} else {
+			dev_err(&adev->dev, "spi Master/Slave mode err!!!\n");
+			goto err_no_gpio;
+		}
+	}
 
 	if (platform_info->num_chipselect && platform_info->chipselects) {
 		for (i = 0; i < num_cs; i++)
@@ -2162,6 +2294,43 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	} else if (pl022->vendor->internal_cs_ctrl) {
 		for (i = 0; i < num_cs; i++)
 			pl022->chipselects[i] = i;
+
+#ifdef CONFIG_ARCH_BSP
+		if ((adev->periphid == adrv->id_table[PL022_IDS_INDEX_BSP].id)
+				&& pl022->vendor->extended_cr
+				&& (num_cs > 1)) {
+			pl022->cs_data = devm_kzalloc(dev,
+					sizeof(struct cs_data),
+					GFP_KERNEL);
+			if (!pl022->cs_data) {
+				status = -ENOMEM;
+				goto err_no_mem;
+			}
+
+			if (of_address_to_resource(np, 1,
+						&pl022->cs_data->res)) {
+				status = -EPROBE_DEFER;
+				goto err_no_gpio;
+			}
+
+			if (of_property_read_u32(np, "spi_cs_sb",
+						&pl022->cs_data->cs_sb)) {
+				status = -EPROBE_DEFER;
+				goto err_no_gpio;
+			}
+
+			if (of_property_read_u32(np, "spi_cs_mask_bit",
+						&pl022->cs_data->cs_mask_bit)) {
+				status = -EPROBE_DEFER;
+				goto err_no_gpio;
+			}
+
+			pl022->cs_data->virt_addr = devm_ioremap(dev,
+					pl022->cs_data->res.start,
+					resource_size(&pl022->cs_data->res));
+		} else
+				pl022->cs_data = NULL;
+#endif
 	} else if (IS_ENABLED(CONFIG_OF)) {
 		for (i = 0; i < num_cs; i++) {
 			int cs_gpio = of_get_named_gpio(np, "cs-gpios", i);
@@ -2207,7 +2376,7 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 		status = -ENOMEM;
 		goto err_no_ioremap;
 	}
-	dev_info(&adev->dev, "mapped registers from %pa to %p\n",
+	dev_dbg(&adev->dev, "mapped registers from %pa to %p\n",
 		&adev->res.start, pl022->virtbase);
 
 	pl022->clk = devm_clk_get(&adev->dev, NULL);
@@ -2267,7 +2436,7 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 
 	/* let runtime pm put suspend */
 	if (platform_info->autosuspend_delay > 0) {
-		dev_info(&adev->dev,
+		dev_dbg(&adev->dev,
 			"will use autosuspend for runtime pm, delay %dms\n",
 			platform_info->autosuspend_delay);
 		pm_runtime_set_autosuspend_delay(dev,
@@ -2288,6 +2457,10 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
  err_no_ioremap:
 	amba_release_regions(adev);
  err_no_ioregion:
+#ifdef CONFIG_ARCH_BSP
+	if (pl022->cs_data)
+		devm_iounmap(&adev->dev, pl022->cs_data->virt_addr);
+#endif
  err_no_gpio:
  err_no_mem:
 	spi_master_put(master);
@@ -2314,6 +2487,10 @@ pl022_remove(struct amba_device *adev)
 
 	clk_disable_unprepare(pl022->clk);
 	amba_release_regions(adev);
+#ifdef CONFIG_ARCH_BSP
+	if (pl022->cs_data)
+		devm_iounmap(&adev->dev, pl022->cs_data->virt_addr);
+#endif
 	tasklet_disable(&pl022->pump_transfers);
 	return 0;
 }
@@ -2429,6 +2606,17 @@ static struct vendor_data vendor_lsi = {
 	.internal_cs_ctrl = true,
 };
 
+#ifdef CONFIG_ARCH_BSP
+static struct vendor_data vendor_bsp = {
+	.fifodepth = 256,
+	.max_bpw = 16,
+	.unidir = false,
+	.extended_cr = true,
+	.pl023 = false,
+	.loopback = true,
+	.internal_cs_ctrl = true,
+};
+#endif
 static const struct amba_id pl022_ids[] = {
 	{
 		/*
@@ -2469,6 +2657,17 @@ static const struct amba_id pl022_ids[] = {
 		.mask	= 0x000fffff,
 		.data	= &vendor_lsi,
 	},
+#ifdef CONFIG_ARCH_BSP
+	{
+		/*
+		 * Vendor derivative, this has a 16bit wide
+		 * and 256 locations deep TX/RX FIFO
+		 */
+		.id	= 0x00800022,
+		.mask	= 0xffffffff,
+		.data	= &vendor_bsp,
+	},
+#endif
 	{ 0, 0 },
 };
 

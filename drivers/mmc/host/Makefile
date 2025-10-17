@@ -84,6 +84,25 @@ obj-$(CONFIG_MMC_SDHCI_OF_AT91)		+= sdhci-of-at91.o
 obj-$(CONFIG_MMC_SDHCI_OF_ESDHC)	+= sdhci-of-esdhc.o
 obj-$(CONFIG_MMC_SDHCI_OF_HLWD)		+= sdhci-of-hlwd.o
 obj-$(CONFIG_MMC_SDHCI_OF_DWCMSHC)	+= sdhci-of-dwcmshc.o
+obj-$(CONFIG_MMC_SDHCI_BSP)		+= sdhci-of-bsp.o
+sdhci-of-bsp-objs          := sdhci-bsp.o mci_proc.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS528V100)	+= sdhci-ss528v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS625V100)	+= sdhci-ss528v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS524V100)	+= sdhci-ss524v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS522V100)   += sdhci-ss524v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS522V101)	+= sdhci-ss524v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS615V100)	+= sdhci-ss524v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS919V100)	+= sdhci-ss919v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS318V100)	+= sdhci-ss318v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS918V100)	+= sdhci-ss318v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS101V200)	+= sdhci-ss101v200.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS101V500)	+= sdhci-ss101v500.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS101V300)	+= sdhci-ss101v300.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS101V600)	+= sdhci-ss101v600.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS013V100)	+= sdhci-ss318v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS015V100)	+= sdhci-ss919v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS928V100)	+= sdhci-ss928v100.o
+sdhci-of-bsp-$(CONFIG_ARCH_SS927V100)	+= sdhci-ss928v100.o
 obj-$(CONFIG_MMC_SDHCI_BCM_KONA)	+= sdhci-bcm-kona.o
 obj-$(CONFIG_MMC_SDHCI_IPROC)		+= sdhci-iproc.o
 obj-$(CONFIG_MMC_SDHCI_MSM)		+= sdhci-msm.o
@@ -99,3 +118,5 @@ endif
 
 obj-$(CONFIG_MMC_SDHCI_XENON)	+= sdhci-xenon-driver.o
 sdhci-xenon-driver-y		+= sdhci-xenon.o sdhci-xenon-phy.o
+
+obj-$(CONFIG_MCI)	+= mci/

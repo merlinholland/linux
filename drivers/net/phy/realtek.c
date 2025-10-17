@@ -32,6 +32,12 @@
 
 #define RTL8211F_INSR				0x1d
 
+/* RTL8211F RGMII requires special TX delays depending
+   on the actual hardware circuit/wiring.
+   TXDLY register does not need to be set
+   when pin No.25 via 4.7k-ohm to DVDD-RG.
+*/
+#define RTL8211F_RGMII_TX_DELAY_ENABLE  1
 #define RTL8211F_TX_DELAY			BIT(8)
 
 #define RTL8201F_ISR				0x1e
@@ -171,6 +177,10 @@ static int rtl8211f_config_init(struct phy_device *phydev)
 	if (ret < 0)
 		return ret;
 
+#if RTL8211F_RGMII_TX_DELAY_ENABLE
+	if (phydev->interface == PHY_INTERFACE_MODE_RGMII)
+		return ret;
+#endif
 	/* enable TX-delay for rgmii-id and rgmii-txid, otherwise disable it */
 	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
 	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID)

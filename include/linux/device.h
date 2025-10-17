@@ -41,6 +41,9 @@ struct fwnode_handle;
 struct iommu_ops;
 struct iommu_group;
 struct iommu_fwspec;
+#ifdef CONFIG_IOMMU_SVA
+struct iommu_param;
+#endif
 struct dev_pin_info;
 
 struct bus_attribute {
@@ -1036,7 +1039,9 @@ struct device {
 	void	(*release)(struct device *dev);
 	struct iommu_group	*iommu_group;
 	struct iommu_fwspec	*iommu_fwspec;
-
+#ifdef CONFIG_IOMMU_SVA
+	struct iommu_param	*iommu_param;
+#endif
 	bool			offline_disabled:1;
 	bool			offline:1;
 	bool			of_node_reused:1;

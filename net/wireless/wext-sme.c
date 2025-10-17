@@ -201,8 +201,8 @@ int cfg80211_mgd_wext_giwessid(struct net_device *dev,
 			       struct iw_request_info *info,
 			       struct iw_point *data, char *ssid)
 {
-	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	int ret = 0;
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
 
 	/* call only for station! */
 	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION))

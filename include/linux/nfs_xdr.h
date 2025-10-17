@@ -1548,6 +1548,7 @@ struct nfs_pgio_completion_ops {
 struct nfs_unlinkdata {
 	struct nfs_removeargs args;
 	struct nfs_removeres res;
+	struct rpc_task		task;
 	struct dentry *dentry;
 	wait_queue_head_t wq;
 	struct rpc_cred	*cred;

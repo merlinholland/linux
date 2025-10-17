@@ -790,8 +790,8 @@ static void check_pci_bridge(struct check *c, struct dt_info *dti, struct node *
 
 	node->bus = &pci_bus;
 
-	if (!strprefixeq(node->name, node->basenamelen, "pci") &&
-	    !strprefixeq(node->name, node->basenamelen, "pcie"))
+	if (!strprefixeq(node->name, 3, "pci") &&
+	    !strprefixeq(node->name, 4, "pcie"))
 		FAIL(c, dti, node, "node name is not \"pci\" or \"pcie\"");
 
 	prop = get_property(node, "ranges");

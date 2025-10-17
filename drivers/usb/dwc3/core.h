@@ -30,6 +30,8 @@
 #include <linux/phy/phy.h>
 
 #define DWC3_MSG_MAX	500
+#define DWC3_PIPE_TRANS_LIMIT_MASK	(0xf << 8)
+#define DWC3_PIPE_TRANS_LIMIT		(0x7 << 8)
 
 /* Global constants */
 #define DWC3_PULL_UP_TIMEOUT	500	/* ms */
@@ -452,6 +454,9 @@
 
 #define DWC3_DSTS_RXFIFOEMPTY		BIT(17)
 
+#define DWC3_EVENT_PRAM_MAX_SOFFN	0x3fff
+#define DWC3_EVENT_PRAM_SOFFN_MASK  0x3fff
+
 #define DWC3_DSTS_SOFFN_MASK		(0x3fff << 3)
 #define DWC3_DSTS_SOFFN(n)		(((n) & DWC3_DSTS_SOFFN_MASK) >> 3)
 
@@ -631,7 +636,7 @@ struct dwc3_event_buffer {
 #define DWC3_EP_DIRECTION_TX	true
 #define DWC3_EP_DIRECTION_RX	false
 
-#define DWC3_TRB_NUM		256
+#define DWC3_TRB_NUM		4096
 
 /**
  * struct dwc3_ep - device side endpoint representation
@@ -691,8 +696,8 @@ struct dwc3_ep {
 	 * By using u8 types we ensure that our % operator when incrementing
 	 * enqueue and dequeue get optimized away by the compiler.
 	 */
-	u8			trb_enqueue;
-	u8			trb_dequeue;
+	u32			trb_enqueue;
+	u32			trb_dequeue;
 
 	u8			number;
 	u8			type;
@@ -1026,6 +1031,8 @@ struct dwc3 {
 	struct dwc3_event_buffer *ev_buf;
 	struct dwc3_ep		*eps[DWC3_ENDPOINTS_NUM];
 
+	u32		dwceps_map_to_usbeps[DWC3_ENDPOINTS_NUM];
+
 	struct usb_gadget	gadget;
 	struct usb_gadget_driver *gadget_driver;
 
@@ -1117,6 +1124,12 @@ struct dwc3 {
 	u8			speed;
 
 	u8			num_eps;
+/*
+ * NOTICE: eps_directions bitmap[0~31] 0: out ep, 1: in ep
+ * and used with total ep numbers(num_out_eps + num_in_eps)
+ */
+#define DWC3_EPS_DEFAULT_DIRECTIONS 0xaaaaaaaa
+	u32			eps_directions;
 
 	struct dwc3_hwparams	hwparams;
 	struct dentry		*root;
@@ -1130,6 +1143,13 @@ struct dwc3 {
 	u8			rx_max_burst_prd;
 	u8			tx_thr_num_pkt_prd;
 	u8			tx_max_burst_prd;
+
+	struct proc_dir_entry* parent_entry;
+	struct proc_dir_entry* csts_entry;
+	u8			udc_connect_status;
+#define UDC_DISCONNECTED 	0
+#define UDC_CONNECT_HOST 	1
+#define UDC_CONNECT_CHARGER	2
 
 	const char		*hsphy_interface;
 
@@ -1147,6 +1167,7 @@ struct dwc3 {
 	unsigned		setup_packet_pending:1;
 	unsigned		three_stage_setup:1;
 	unsigned		usb3_lpm_capable:1;
+	unsigned		usb2_lpm_disable:1;
 
 	unsigned		disable_scramble_quirk:1;
 	unsigned		u2exit_lfps_quirk:1;
@@ -1164,6 +1185,10 @@ struct dwc3 {
 	unsigned		dis_del_phy_power_chg_quirk:1;
 	unsigned		dis_tx_ipgap_linecheck_quirk:1;
 
+	unsigned        dis_initiate_u1:1;
+	unsigned        dis_initiate_u2:1;
+
+	unsigned		eps_new_init:1;
 	unsigned		tx_de_emphasis_quirk:1;
 	unsigned		tx_de_emphasis:2;
 
@@ -1412,6 +1437,9 @@ static inline void dwc3_otg_update(struct dwc3 *dwc, bool ignore_idstatus)
 static inline void dwc3_otg_host_init(struct dwc3 *dwc)
 { }
 #endif
+
+int dwc3_proc_init(struct dwc3 *dwc);
+int dwc3_proc_shutdown(struct dwc3 *dwc);
 
 /* power management interface */
 #if !IS_ENABLED(CONFIG_USB_DWC3_HOST)

@@ -1562,6 +1562,12 @@ static u32 *gen9_init_indirectctx_bb(struct intel_engine_cs *engine, u32 *batch)
 	/* WaFlushCoherentL3CacheLinesAtContextSwitch:skl,bxt,glk */
 	batch = gen8_emit_flush_coherentl3_wa(engine, batch);
 
+	batch = gen8_emit_pipe_control(batch,
+			PIPE_CONTROL_FLUSH_L3 |
+			PIPE_CONTROL_STORE_DATA_INDEX |
+			PIPE_CONTROL_CS_STALL |
+			PIPE_CONTROL_QW_WRITE,
+			LRC_PPHWSP_SCRATCH_ADDR);
 	batch = emit_lri(batch, lri, ARRAY_SIZE(lri));
 
 	/* WaClearSlmSpaceAtContextSwitch:kbl */

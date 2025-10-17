@@ -512,4 +512,12 @@ source "drivers/usb/gadget/legacy/Kconfig"
 
 endchoice
 
+if USB_F_UVC
+config MPP_TO_GADGET_UVC
+	bool "USB Gadget Webcam Data from MPP"
+	default n
+	help
+	  Let Webcam function gets streaming data from mpp directly.
+endif
+
 endif # USB_GADGET

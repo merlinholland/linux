@@ -1433,7 +1433,11 @@ extern int blk_verify_command(unsigned char *cmd, fmode_t mode);
 enum blk_default_limits {
 	BLK_MAX_SEGMENTS	= 128,
 	BLK_SAFE_MAX_SECTORS	= 255,
+#ifndef CONFIG_BSP_MC
 	BLK_DEF_MAX_SECTORS	= 2560,
+#else
+	BLK_DEF_MAX_SECTORS	= 8192,
+#endif
 	BLK_MAX_SEGMENT_SIZE	= 65536,
 	BLK_SEG_BOUNDARY_MASK	= 0xFFFFFFFFUL,
 };

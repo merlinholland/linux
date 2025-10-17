@@ -98,6 +98,12 @@ config POWER_RESET_HISI
 	help
 	  Reboot support for Hisilicon boards.
 
+config POWER_RESET_BSP
+	bool "Vendor power-off driver"
+	depends on ARCH_BSP
+	help
+	  Reboot support for Vendor boards.
+
 config POWER_RESET_MSM
 	bool "Qualcomm MSM power-off driver"
 	depends on ARCH_QCOM

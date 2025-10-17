@@ -676,6 +676,7 @@ stex_queuecommand_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 			struct st_drvver ver;
 			size_t cp_len = sizeof(ver);
 
+			memset(&ver, 0x00, sizeof(ver));
 			ver.major = ST_VER_MAJOR;
 			ver.minor = ST_VER_MINOR;
 			ver.oem = ST_OEM;

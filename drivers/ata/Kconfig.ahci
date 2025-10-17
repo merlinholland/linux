@@ -1,0 +1,44 @@
+menuconfig BSP_SATA
+	bool "Vendor sata device support"
+	depends on (ARCH_SS528V100 || ARCH_SS625V100 || ARCH_SS524V100 || ARCH_SS522V100 || ARCH_SS522V101 || ARCH_SS615V100)
+	default n
+	select ATA
+	select ATA_VERBOSE_ERROR
+	select SATA_PMP
+	select SATA_AHCI_PLATFORM
+
+if BSP_SATA
+config BSP_SATA_IOBASE
+	hex "Vendor sata IO address"
+	default "0x10390000" if (ARCH_SS528V100 || ARCH_SS625V100)
+	default "0x10390000" if (ARCH_SS524V100 || ARCH_SS522V100 || ARCH_SS522V101 || ARCH_SS615V100)
+	help
+	  vendor sata io base address.
+
+config BSP_SATA_FBS
+	int "Vendor sata FIS-Based switching"
+	default 1
+	range 0 1
+	help
+	  satav200 supports FBS.
+	  FBS is FIS-Based switching.
+	  Choose y if you want to use it.
+
+config BSP_SATA_NCQ
+	int "Vendor sata Native Command Queuing"
+	default 1
+	range 0 1
+	help
+	  satav200 supports NCQ.
+	  NCQ is Native Command Queuing.
+	  Choose y if you want to use it.
+
+config BSP_ESATA
+	bool "Support Vendor eSATA"
+	default n
+	help
+	  satav200 supports eSATA.
+	  Choose y if you want to use it.
+
+endif
+

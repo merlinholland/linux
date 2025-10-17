@@ -406,8 +406,10 @@ static int spi_gpio_probe(struct platform_device *pdev)
 
 	status = spi_gpio_request(&pdev->dev, spi_gpio,
 				  pdata->num_chipselect, &master_flags);
-	if (status)
+	if (status) {
+		spi_master_put(master);
 		return status;
+	}
 
 	master->bits_per_word_mask = SPI_BPW_RANGE_MASK(1, 32);
 	master->mode_bits = SPI_3WIRE | SPI_CPHA | SPI_CPOL | SPI_CS_HIGH;

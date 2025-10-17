@@ -37,8 +37,24 @@
 #include "io.h"
 
 #include "debug.h"
+#include "dwc3-bsp.h"
 
 #define DWC3_DEFAULT_AUTOSUSPEND_DELAY	5000 /* ms */
+
+
+/*
+ * Default to the number of outstanding pipelined transfer
+ * requests is 0x3[11:8], modify the field change to 0x7.
+ */
+static void dwc3_outstanding_pipe_choose(struct dwc3 *dwc)
+{
+	u32	reg;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GSBUSCFG1);
+	reg &= ~DWC3_PIPE_TRANS_LIMIT_MASK;
+	reg |= DWC3_PIPE_TRANS_LIMIT;
+	dwc3_writel(dwc->regs, DWC3_GSBUSCFG1, reg);
+}
 
 /**
  * dwc3_get_dr_mode - Validates and sets dr_mode
@@ -1224,7 +1240,8 @@ static void dwc3_get_properties(struct dwc3 *dwc)
 	 */
 	hird_threshold = 12;
 
-	dwc->maximum_speed = usb_get_maximum_speed(dev);
+	dwc->maximum_speed = usb_get_max_speed(dev);
+
 	dwc->dr_mode = usb_get_dr_mode(dev);
 	dwc->hsphy_mode = of_usb_get_phy_mode(dev->of_node);
 
@@ -1253,6 +1270,9 @@ static void dwc3_get_properties(struct dwc3 *dwc)
 				&tx_thr_num_pkt_prd);
 	device_property_read_u8(dev, "snps,tx-max-burst-prd",
 				&tx_max_burst_prd);
+
+	dwc->usb2_lpm_disable = device_property_read_bool(dev,
+				"snps,usb2-lpm-disable");
 
 	dwc->disable_scramble_quirk = device_property_read_bool(dev,
 				"snps,disable_scramble_quirk");
@@ -1284,6 +1304,16 @@ static void dwc3_get_properties(struct dwc3 *dwc)
 				"snps,dis-del-phy-power-chg-quirk");
 	dwc->dis_tx_ipgap_linecheck_quirk = device_property_read_bool(dev,
 				"snps,dis-tx-ipgap-linecheck-quirk");
+
+	dwc->dis_initiate_u1 = device_property_read_bool(dev,
+				"snps,dis_initiate_u1");
+	dwc->dis_initiate_u2 = device_property_read_bool(dev,
+				"snps,dis_initiate_u2");
+
+	dwc->eps_new_init = device_property_read_bool(dev,
+				"snps,eps_new_init");
+	device_property_read_u32(dev, "eps_directions",
+				 &dwc->eps_directions);
 
 	dwc->tx_de_emphasis_quirk = device_property_read_bool(dev,
 				"snps,tx_de_emphasis_quirk");
@@ -1452,6 +1482,10 @@ static int dwc3_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, dwc);
 	dwc3_cache_hwparams(dwc);
 
+	device_property_read_u32_array(dev, "eps_map",
+					dwc->dwceps_map_to_usbeps,
+					DWC3_NUM_EPS(&dwc->hwparams));
+
 	spin_lock_init(&dwc->lock);
 
 	pm_runtime_set_active(dev);
@@ -1485,6 +1519,8 @@ static int dwc3_probe(struct platform_device *pdev)
 			dev_err(dev, "failed to initialize core: %d\n", ret);
 		goto err4;
 	}
+
+	dwc3_outstanding_pipe_choose(dwc);
 
 	dwc3_check_params(dwc);
 
@@ -1544,6 +1580,10 @@ static int dwc3_remove(struct platform_device *pdev)
 	dwc3_free_event_buffers(dwc);
 	dwc3_free_scratch_buffers(dwc);
 	clk_bulk_put(dwc->num_clks, dwc->clks);
+
+	bsp_dwc3_exited();
+
+	dwc3_set_mode(dwc, DWC3_GCTL_PRTCAP_HOST);
 
 	return 0;
 }

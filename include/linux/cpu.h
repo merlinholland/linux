@@ -41,6 +41,7 @@ extern bool arch_match_cpu_phys_id(int cpu, u64 phys_id);
 extern bool arch_find_n_match_cpu_physical_id(struct device_node *cpun,
 					      int cpu, unsigned int *thread);
 
+extern int register_cpu_notifier(struct notifier_block *nb);
 extern int cpu_add_dev_attr(struct device_attribute *attr);
 extern void cpu_remove_dev_attr(struct device_attribute *attr);
 

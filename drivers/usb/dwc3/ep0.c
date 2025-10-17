@@ -22,6 +22,8 @@
 #include <linux/usb/gadget.h>
 #include <linux/usb/composite.h>
 
+#include <linux/iprec.h>
+
 #include "core.h"
 #include "debug.h"
 #include "gadget.h"
@@ -56,6 +58,20 @@ static void dwc3_ep0_prepare_one_trb(struct dwc3_ep *dep,
 	else
 		trb->ctrl |= (DWC3_TRB_CTRL_IOC
 				| DWC3_TRB_CTRL_LST);
+
+	iprec("EP0 Prepare TRB:%d raw[%x %x %x %x] BUFSIZE:%d %s%s%s%s | %s%s%s%s%s  CTL:0x%x",
+			dep->trb_enqueue, trb->bpl, trb->bph, trb->size, trb->ctrl,
+			trb->size & DWC3_TRB_SIZE_MASK,
+			(type == DWC3_TRBCTL_CONTROL_SETUP)?" setup" : "",
+			(type == DWC3_TRBCTL_CONTROL_STATUS3)?" status3" : "",
+			(type == DWC3_TRBCTL_CONTROL_STATUS2)?" status2" : "",
+			(type == DWC3_TRBCTL_CONTROL_DATA)?" data" : "",
+			(trb->ctrl & DWC3_TRB_CTRL_IOC) ? "IOC " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_CSP) ? "CSP " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_CHN) ? "CHN " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_LST) ? "LST " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_HWO) ? "HWO " : "",
+			((trb->ctrl >> 4) & 0x3f));
 
 	trace_dwc3_prepare_trb(dep, trb);
 }
@@ -281,6 +297,24 @@ void dwc3_ep0_out_start(struct dwc3 *dwc)
 	WARN_ON(ret < 0);
 }
 
+static u32 dwc3_usbep_to_dwc3ep(struct dwc3 *dwc, u32 num)
+{
+	u32 res = 0;
+	int i;
+
+	if (!dwc)
+		return 0;
+
+	for (i = 0; i < dwc->num_eps; i++) {
+		if (dwc->dwceps_map_to_usbeps[i] == num) {
+			res = i;
+			break;
+		}
+	}
+
+	return res;
+}
+
 static struct dwc3_ep *dwc3_wIndex_to_dep(struct dwc3 *dwc, __le16 wIndex_le)
 {
 	struct dwc3_ep		*dep;
@@ -290,6 +324,9 @@ static struct dwc3_ep *dwc3_wIndex_to_dep(struct dwc3 *dwc, __le16 wIndex_le)
 	epnum = (windex & USB_ENDPOINT_NUMBER_MASK) << 1;
 	if ((windex & USB_ENDPOINT_DIR_MASK) == USB_DIR_IN)
 		epnum |= 1;
+
+	if (dwc->eps_new_init)
+		epnum = dwc3_usbep_to_dwc3ep(dwc, epnum);
 
 	dep = dwc->eps[epnum];
 	if (dep->flags & DWC3_EP_ENABLED)
@@ -380,6 +417,9 @@ static int dwc3_ep0_handle_u1(struct dwc3 *dwc, enum usb_device_state state,
 			(dwc->speed != DWC3_DSTS_SUPERSPEED_PLUS))
 		return -EINVAL;
 
+	if (dwc->dis_initiate_u1)
+		return -EINVAL;
+
 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
 	if (set)
 		reg |= DWC3_DCTL_INITU1ENA;
@@ -400,6 +440,9 @@ static int dwc3_ep0_handle_u2(struct dwc3 *dwc, enum usb_device_state state,
 		return -EINVAL;
 	if ((dwc->speed != DWC3_DSTS_SUPERSPEED) &&
 			(dwc->speed != DWC3_DSTS_SUPERSPEED_PLUS))
+		return -EINVAL;
+
+	if (dwc->dis_initiate_u2)
 		return -EINVAL;
 
 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
@@ -626,7 +669,15 @@ static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 			 * nothing is pending from application.
 			 */
 			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			reg |= (DWC3_DCTL_ACCEPTU1ENA | DWC3_DCTL_ACCEPTU2ENA);
+			if (dwc->dis_initiate_u1)
+				reg &= (~DWC3_DCTL_ACCEPTU1ENA);
+			else
+				reg |= DWC3_DCTL_ACCEPTU1ENA;
+
+			if (dwc->dis_initiate_u2)
+				reg &= (~DWC3_DCTL_ACCEPTU2ENA);
+			else
+				reg |= DWC3_DCTL_ACCEPTU2ENA;
 			dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 		}
 		break;
@@ -785,6 +836,10 @@ static void dwc3_ep0_inspect_setup(struct dwc3 *dwc,
 
 	trace_dwc3_ctrl_req(ctrl);
 
+	iprec("EP0 Inspect setup: request_type:0x%02x request:0x%02x val:0x%04x idx:0x%04x len:0x%04x",
+		ctrl->bRequestType, ctrl->bRequest, le16_to_cpu(ctrl->wValue),
+		le16_to_cpu(ctrl->wIndex), le16_to_cpu(ctrl->wLength));
+
 	len = le16_to_cpu(ctrl->wLength);
 	if (!len) {
 		dwc->three_stage_setup = false;
@@ -879,6 +934,17 @@ static void dwc3_ep0_complete_status(struct dwc3 *dwc,
 	trb = dwc->ep0_trb;
 
 	trace_dwc3_complete_trb(dep, trb);
+
+	iprec("EP0 TRB Complete:%d raw[%x %x %x %x]BUFSIZE:%d STATUS:0x%x %s%s%s%s CTL:0x%x",
+			dep->trb_enqueue,
+			trb->bpl, trb->bph, trb->size, trb->ctrl,
+			trb->size & DWC3_TRB_SIZE_MASK,
+			DWC3_TRB_SIZE_TRBSTS(trb->size),
+			(trb->ctrl & DWC3_TRB_CTRL_IOC) ? "IOC " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_CSP) ? "CSP " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_CHN) ? "CHN " : "",
+			(trb->ctrl & DWC3_TRB_CTRL_LST) ? "LST " : "",
+			((trb->ctrl >> 4) & 0x3f));
 
 	if (!list_empty(&dep->pending_list)) {
 		r = next_request(&dep->pending_list);
@@ -1056,6 +1122,15 @@ static void dwc3_ep0_end_control_data(struct dwc3 *dwc, struct dwc3_ep *dep)
 static void dwc3_ep0_xfernotready(struct dwc3 *dwc,
 		const struct dwc3_event_depevt *event)
 {
+	iprec("ep0xfernotready event:0x%x params:0x%x(%d) status:0x%x ev_type:0x%x ep0stage:%s ep:%d SOFFN=0x%04X",
+			*event, event->parameters, event->parameters,
+			event->status, event->endpoint_event,
+			(dwc->ep0state == EP0_SETUP_PHASE) ? " Setup" :
+			(dwc->ep0state == EP0_DATA_PHASE) ? " Data" :
+			(dwc->ep0state == EP0_STATUS_PHASE) ? " Status" : " Unknown",
+			event->endpoint_number,
+			DWC3_DSTS_SOFFN(dwc3_readl(dwc->regs, DWC3_DSTS)));
+
 	switch (event->status) {
 	case DEPEVT_STATUS_CONTROL_DATA:
 		/*

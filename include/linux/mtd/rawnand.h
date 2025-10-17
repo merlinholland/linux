@@ -1434,10 +1434,18 @@ static inline void *nand_get_manufacturer_data(struct nand_chip *chip)
 #define NAND_MFR_AMD		0x01
 #define NAND_MFR_MACRONIX	0xc2
 #define NAND_MFR_EON		0x92
+#define NAND_MFR_WINBOND	0xef
+#define NAND_MFR_ATO		0x9b
+#define NAND_MFR_MXIC		0xc2
+#define NAND_MFR_ALL_FLASH	0xc1
+#define NAND_MFR_PARAGON	0xa1
 #define NAND_MFR_SANDISK	0x45
 #define NAND_MFR_INTEL		0x89
 #define NAND_MFR_ATO		0x9b
-#define NAND_MFR_WINBOND	0xef
+#define NAND_MFR_GD_ESMT	0xc8
+#define NAND_MFR_HEYANGTEK	0xc9
+#define NAND_MFR_DOSILICON	0xe5
+#define NAND_MFR_FIDELIX	0xf8
 
 
 /*

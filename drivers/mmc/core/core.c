@@ -1701,6 +1701,9 @@ void mmc_power_off(struct mmc_host *host)
 
 void mmc_power_cycle(struct mmc_host *host, u32 ocr)
 {
+	if (host->type == MMC_HOST_TYPE_MMC)
+		return;
+
 	mmc_power_off(host);
 	/* Wait at least 1 ms according to SD spec */
 	mmc_delay(1);
@@ -2650,16 +2653,27 @@ void mmc_rescan(struct work_struct *work)
 	mmc_bus_put(host);
 
 	mmc_claim_host(host);
+	host->card_status = MMC_CARD_UNINIT;
 	if (mmc_card_is_removable(host) && host->ops->get_cd &&
 			host->ops->get_cd(host) == 0) {
 		mmc_power_off(host);
+		if (host->ops->card_info_save)
+			host->ops->card_info_save(host);
 		mmc_release_host(host);
 		goto out;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(freqs); i++) {
-		if (!mmc_rescan_try_freq(host, max(freqs[i], host->f_min)))
+		if (!mmc_rescan_try_freq(host, max(freqs[i], host->f_min))) {
+			host->card_status = MMC_CARD_INIT;
+			if (host->ops->card_info_save)
+				host->ops->card_info_save(host);
 			break;
+		} else if ((i == (ARRAY_SIZE(freqs) - 1)) ||
+			(freqs[i] <= host->f_min)) {
+			host->card_status = MMC_CARD_INIT_FAIL;
+		}
+
 		if (freqs[i] <= host->f_min)
 			break;
 	}

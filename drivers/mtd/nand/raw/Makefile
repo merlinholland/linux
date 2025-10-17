@@ -58,7 +58,7 @@ obj-$(CONFIG_MTD_NAND_QCOM)		+= qcom_nandc.o
 obj-$(CONFIG_MTD_NAND_MTK)		+= mtk_ecc.o mtk_nand.o
 obj-$(CONFIG_MTD_NAND_TEGRA)		+= tegra_nand.o
 
-nand-objs := nand_base.o nand_bbt.o nand_timings.o nand_ids.o
+nand-objs := nand_base.o nand_bbt.o nand_timings.o nand_ids.o nfc_gen.o nfc_spl_ids.o match_table.o
 nand-objs += nand_amd.o
 nand-objs += nand_hynix.o
 nand-objs += nand_macronix.o

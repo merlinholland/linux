@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/string.h>
+#include <linux/securec.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/g_uvc.h>
@@ -23,6 +24,8 @@
 
 #include <media/v4l2-dev.h>
 #include <media/v4l2-event.h>
+
+#include <linux/iprec.h>
 
 #include "u_uvc.h"
 #include "uvc.h"
@@ -42,6 +45,29 @@ MODULE_PARM_DESC(trace, "Trace level bitmask");
 
 #define UVC_STRING_CONTROL_IDX			0
 #define UVC_STRING_STREAMING_IDX		1
+
+#define SS_EP_BURST				0
+#define SS_EP_ATTRIBUTES		0
+#define SS_EP_MAX_PACKET_SIZE	1024
+
+#define SS_EP1_BURST			1
+#define SS_EP1_ATTRIBUTES		0
+#define SS_EP1_MAX_PACKET_SIZE	1024
+
+#define SS_EP2_BURST			8
+#define SS_EP2_ATTRIBUTES		1
+#define SS_EP2_MAX_PACKET_SIZE	1024
+
+#define SS_EP3_BURST			15
+#define SS_EP3_ATTRIBUTES		1
+#define SS_EP3_MAX_PACKET_SIZE	1024
+
+#define HS_EP_MAX_PACKET_SIZE	0x320
+#define HS_EP1_MAX_PACKET_SIZE	0xBE0
+#define HS_EP2_MAX_PACKET_SIZE	0x1380
+#define HS_EP3_MAX_PACKET_SIZE	0x1400
+
+#define USB_ENDPOINT_MAXP_MASK  0x07ff
 
 static struct usb_string uvc_en_us_strings[] = {
 	[UVC_STRING_CONTROL_IDX].s = "UVC Camera",
@@ -136,6 +162,42 @@ static struct usb_interface_descriptor uvc_streaming_intf_alt1 = {
 	.iInterface		= 0,
 };
 
+static struct usb_interface_descriptor uvc_streaming_intf_alt2 = {
+	.bLength		= USB_DT_INTERFACE_SIZE,
+	.bDescriptorType	= USB_DT_INTERFACE,
+	.bInterfaceNumber	= UVC_INTF_VIDEO_STREAMING,
+	.bAlternateSetting	= 2,
+	.bNumEndpoints		= 1,
+	.bInterfaceClass	= USB_CLASS_VIDEO,
+	.bInterfaceSubClass	= UVC_SC_VIDEOSTREAMING,
+	.bInterfaceProtocol	= 0x00,
+	.iInterface		= 0,
+};
+
+static struct usb_interface_descriptor uvc_streaming_intf_alt3 = {
+	.bLength		= USB_DT_INTERFACE_SIZE,
+	.bDescriptorType	= USB_DT_INTERFACE,
+	.bInterfaceNumber	= UVC_INTF_VIDEO_STREAMING,
+	.bAlternateSetting	= 3,
+	.bNumEndpoints		= 1,
+	.bInterfaceClass	= USB_CLASS_VIDEO,
+	.bInterfaceSubClass	= UVC_SC_VIDEOSTREAMING,
+	.bInterfaceProtocol	= 0x00,
+	.iInterface		= 0,
+};
+
+static struct usb_interface_descriptor uvc_streaming_intf_alt4 = {
+	.bLength		= USB_DT_INTERFACE_SIZE,
+	.bDescriptorType	= USB_DT_INTERFACE,
+	.bInterfaceNumber	= UVC_INTF_VIDEO_STREAMING,
+	.bAlternateSetting	= 4,
+	.bNumEndpoints		= 1,
+	.bInterfaceClass	= USB_CLASS_VIDEO,
+	.bInterfaceSubClass	= UVC_SC_VIDEOSTREAMING,
+	.bInterfaceProtocol	= 0x00,
+	.iInterface		= 0,
+};
+
 static struct usb_endpoint_descriptor uvc_fs_streaming_ep = {
 	.bLength		= USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType	= USB_DT_ENDPOINT,
@@ -147,7 +209,73 @@ static struct usb_endpoint_descriptor uvc_fs_streaming_ep = {
 	 */
 };
 
+static struct usb_endpoint_descriptor uvc_fs_streaming_ep1 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_fs_streaming_ep2 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_fs_streaming_ep3 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
 static struct usb_endpoint_descriptor uvc_hs_streaming_ep = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_hs_streaming_ep1 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_hs_streaming_ep2 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_hs_streaming_ep3 = {
 	.bLength		= USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType	= USB_DT_ENDPOINT,
 	.bEndpointAddress	= USB_DIR_IN,
@@ -170,6 +298,42 @@ static struct usb_endpoint_descriptor uvc_ss_streaming_ep = {
 	 */
 };
 
+static struct usb_endpoint_descriptor uvc_ss_streaming_ep1 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_ss_streaming_ep2 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
+static struct usb_endpoint_descriptor uvc_ss_streaming_ep3 = {
+	.bLength		= USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType	= USB_DT_ENDPOINT,
+
+	.bEndpointAddress	= USB_DIR_IN,
+	.bmAttributes		= USB_ENDPOINT_SYNC_ASYNC
+				| USB_ENDPOINT_XFER_ISOC,
+	/* The wMaxPacketSize and bInterval values will be initialized from
+	 * module parameters.
+	 */
+};
+
 static struct usb_ss_ep_comp_descriptor uvc_ss_streaming_comp = {
 	.bLength		= sizeof(uvc_ss_streaming_comp),
 	.bDescriptorType	= USB_DT_SS_ENDPOINT_COMP,
@@ -178,22 +342,58 @@ static struct usb_ss_ep_comp_descriptor uvc_ss_streaming_comp = {
 	 */
 };
 
+static struct usb_ss_ep_comp_descriptor uvc_ss_streaming_comp1 = {
+	.bLength		= sizeof(uvc_ss_streaming_comp1),
+	.bDescriptorType	= USB_DT_SS_ENDPOINT_COMP,
+};
+
+static struct usb_ss_ep_comp_descriptor uvc_ss_streaming_comp2 = {
+	.bLength		= sizeof(uvc_ss_streaming_comp2),
+	.bDescriptorType	= USB_DT_SS_ENDPOINT_COMP,
+};
+
+static struct usb_ss_ep_comp_descriptor uvc_ss_streaming_comp3 = {
+	.bLength		= sizeof(uvc_ss_streaming_comp3),
+	.bDescriptorType	= USB_DT_SS_ENDPOINT_COMP,
+};
+
 static const struct usb_descriptor_header * const uvc_fs_streaming[] = {
-	(struct usb_descriptor_header *) &uvc_streaming_intf_alt1,
-	(struct usb_descriptor_header *) &uvc_fs_streaming_ep,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt1,
+	(struct usb_descriptor_header *)&uvc_fs_streaming_ep,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt2,
+	(struct usb_descriptor_header *)&uvc_fs_streaming_ep1,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt3,
+	(struct usb_descriptor_header *)&uvc_fs_streaming_ep2,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt4,
+	(struct usb_descriptor_header *)&uvc_fs_streaming_ep3,
 	NULL,
 };
 
 static const struct usb_descriptor_header * const uvc_hs_streaming[] = {
-	(struct usb_descriptor_header *) &uvc_streaming_intf_alt1,
-	(struct usb_descriptor_header *) &uvc_hs_streaming_ep,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt1,
+	(struct usb_descriptor_header *)&uvc_hs_streaming_ep,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt2,
+	(struct usb_descriptor_header *)&uvc_hs_streaming_ep1,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt3,
+	(struct usb_descriptor_header *)&uvc_hs_streaming_ep2,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt4,
+	(struct usb_descriptor_header *)&uvc_hs_streaming_ep3,
 	NULL,
 };
 
 static const struct usb_descriptor_header * const uvc_ss_streaming[] = {
-	(struct usb_descriptor_header *) &uvc_streaming_intf_alt1,
-	(struct usb_descriptor_header *) &uvc_ss_streaming_ep,
-	(struct usb_descriptor_header *) &uvc_ss_streaming_comp,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt1,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_ep,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_comp,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt2,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_ep1,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_comp1,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt3,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_ep2,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_comp2,
+	(struct usb_descriptor_header *)&uvc_streaming_intf_alt4,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_ep3,
+	(struct usb_descriptor_header *)&uvc_ss_streaming_comp3,
 	NULL,
 };
 
@@ -222,6 +422,7 @@ uvc_function_ep0_complete(struct usb_ep *ep, struct usb_request *req)
 		uvc_event->data.length = req->actual;
 		memcpy(&uvc_event->data.data, req->buf, req->actual);
 		v4l2_event_queue(&uvc->vdev, &v4l2_event);
+		iprec("v4l2 queue UVC_EVENT_DATA");
 	}
 }
 
@@ -236,6 +437,10 @@ uvc_function_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	 *	ctrl->bRequestType, ctrl->bRequest, le16_to_cpu(ctrl->wValue),
 	 *	le16_to_cpu(ctrl->wIndex), le16_to_cpu(ctrl->wLength));
 	 */
+
+	iprec("%s setup request 0x%02x 0x%02x value 0x%04x index 0x%04x length 0x%04x",
+		__func__, ctrl->bRequestType, ctrl->bRequest, le16_to_cpu(ctrl->wValue),
+		le16_to_cpu(ctrl->wIndex), le16_to_cpu(ctrl->wLength));
 
 	if ((ctrl->bRequestType & USB_TYPE_MASK) != USB_TYPE_CLASS) {
 		INFO(f->config->cdev, "invalid request type\n");
@@ -256,6 +461,7 @@ uvc_function_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	v4l2_event.type = UVC_EVENT_SETUP;
 	memcpy(&uvc_event->req, ctrl, sizeof(uvc_event->req));
 	v4l2_event_queue(&uvc->vdev, &v4l2_event);
+	iprec("v4l2 queue UVC_EVENT_SETUP");
 
 	return 0;
 }
@@ -281,6 +487,66 @@ uvc_function_get_alt(struct usb_function *f, unsigned interface)
 	else
 		return uvc->video.ep->enabled ? 1 : 0;
 }
+static int uvc_function_set_appropriate_ep(struct usb_function *f, unsigned alt)
+{
+	struct uvc_device *uvc = to_uvc(f);
+	switch (alt) {
+	case ALT_EP1:
+		if (f->config->cdev->gadget->speed == USB_SPEED_SUPER) {
+			uvc->video.ep->maxpacket = SS_EP_MAX_PACKET_SIZE;
+			uvc->video.ep->desc = &uvc_ss_streaming_ep;
+			uvc->video.ep->mult = SS_EP_ATTRIBUTES + 1;
+			uvc->video.ep->maxburst = SS_EP_BURST + 1;
+			uvc->video.ep->comp_desc = &uvc_ss_streaming_comp;
+		} else {
+			uvc->video.ep->desc = &uvc_hs_streaming_ep;
+			uvc->video.ep->maxpacket = uvc->video.ep->desc->wMaxPacketSize & USB_ENDPOINT_MAXP_MASK;
+			uvc->video.ep->mult = USB_EP_MAXP_MULT(uvc->video.ep->desc->wMaxPacketSize) + 1;
+		}
+		return 0;
+	case ALT_EP2:
+		if (f->config->cdev->gadget->speed == USB_SPEED_SUPER) {
+			uvc->video.ep->maxpacket = SS_EP1_MAX_PACKET_SIZE;
+			uvc->video.ep->desc = &uvc_ss_streaming_ep1;
+			uvc->video.ep->mult = SS_EP1_ATTRIBUTES + 1;
+			uvc->video.ep->maxburst = SS_EP1_BURST + 1;
+			uvc->video.ep->comp_desc = &uvc_ss_streaming_comp1;
+		} else {
+			uvc->video.ep->desc = &uvc_hs_streaming_ep1;
+			uvc->video.ep->maxpacket = uvc->video.ep->desc->wMaxPacketSize & USB_ENDPOINT_MAXP_MASK;
+			uvc->video.ep->mult = USB_EP_MAXP_MULT(uvc->video.ep->desc->wMaxPacketSize) + 1;
+		}
+		return 0;
+	case ALT_EP3:
+		if (f->config->cdev->gadget->speed == USB_SPEED_SUPER) {
+			uvc->video.ep->maxpacket = SS_EP2_MAX_PACKET_SIZE;
+			uvc->video.ep->desc = &uvc_ss_streaming_ep2;
+			uvc->video.ep->mult = SS_EP2_ATTRIBUTES + 1;
+			uvc->video.ep->maxburst = SS_EP2_BURST + 1;
+			uvc->video.ep->comp_desc = &uvc_ss_streaming_comp2;
+		} else {
+			uvc->video.ep->desc = &uvc_hs_streaming_ep2;
+			uvc->video.ep->maxpacket = uvc->video.ep->desc->wMaxPacketSize & USB_ENDPOINT_MAXP_MASK;
+			uvc->video.ep->mult = USB_EP_MAXP_MULT(uvc->video.ep->desc->wMaxPacketSize) + 1;
+		}
+		return 0;
+	case ALT_EP4:
+		if (f->config->cdev->gadget->speed == USB_SPEED_SUPER) {
+		uvc->video.ep->maxpacket = SS_EP3_MAX_PACKET_SIZE;
+		uvc->video.ep->desc = &uvc_ss_streaming_ep3;
+		uvc->video.ep->mult = SS_EP3_ATTRIBUTES + 1;
+		uvc->video.ep->maxburst = SS_EP3_BURST + 1;
+		uvc->video.ep->comp_desc = &uvc_ss_streaming_comp3;
+		} else {
+			uvc->video.ep->desc = &uvc_hs_streaming_ep3;
+			uvc->video.ep->maxpacket = uvc->video.ep->desc->wMaxPacketSize & USB_ENDPOINT_MAXP_MASK;
+			uvc->video.ep->mult = USB_EP_MAXP_MULT(uvc->video.ep->desc->wMaxPacketSize) + 1;
+		}
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
 
 static int
 uvc_function_set_alt(struct usb_function *f, unsigned interface, unsigned alt)
@@ -292,6 +558,7 @@ uvc_function_set_alt(struct usb_function *f, unsigned interface, unsigned alt)
 	int ret;
 
 	INFO(cdev, "uvc_function_set_alt(%u, %u)\n", interface, alt);
+	iprec("%s(%u, %u)", __func__, interface, alt);
 
 	if (interface == uvc->control_intf) {
 		if (alt)
@@ -311,7 +578,7 @@ uvc_function_set_alt(struct usb_function *f, unsigned interface, unsigned alt)
 			v4l2_event.type = UVC_EVENT_CONNECT;
 			uvc_event->speed = cdev->gadget->speed;
 			v4l2_event_queue(&uvc->vdev, &v4l2_event);
-
+			iprec("v4l2 queue UVC_EVENT_CONNECT");
 			uvc->state = UVC_STATE_CONNECTED;
 		}
 
@@ -326,44 +593,66 @@ uvc_function_set_alt(struct usb_function *f, unsigned interface, unsigned alt)
 		return alt ? -EINVAL : 0;
 	*/
 
-	switch (alt) {
-	case 0:
+	if (alt == ALT_EP0) {
 		if (uvc->state != UVC_STATE_STREAMING)
 			return 0;
 
 		if (uvc->video.ep)
 			usb_ep_disable(uvc->video.ep);
 
-		memset(&v4l2_event, 0, sizeof(v4l2_event));
+		(void)memset_s(&v4l2_event, sizeof(v4l2_event), 0, sizeof(v4l2_event));
 		v4l2_event.type = UVC_EVENT_STREAMOFF;
 		v4l2_event_queue(&uvc->vdev, &v4l2_event);
-
+		iprec("v4l2 queue UVC_EVENT_STREAMOFF");
 		uvc->state = UVC_STATE_CONNECTED;
 		return 0;
+	}
 
-	case 1:
-		if (uvc->state != UVC_STATE_CONNECTED)
-			return 0;
-
-		if (!uvc->video.ep)
-			return -EINVAL;
-
-		INFO(cdev, "reset UVC\n");
-		usb_ep_disable(uvc->video.ep);
-
-		ret = config_ep_by_speed(f->config->cdev->gadget,
-				&(uvc->func), uvc->video.ep);
-		if (ret)
-			return ret;
-		usb_ep_enable(uvc->video.ep);
-
-		memset(&v4l2_event, 0, sizeof(v4l2_event));
-		v4l2_event.type = UVC_EVENT_STREAMON;
-		v4l2_event_queue(&uvc->vdev, &v4l2_event);
-		return USB_GADGET_DELAYED_STATUS;
-
-	default:
+	if (alt > ALT_EP4)
 		return -EINVAL;
+
+	if (uvc->state != UVC_STATE_CONNECTED)
+		return 0;
+
+	if (!uvc->video.ep)
+		return -EINVAL;
+
+	INFO(cdev, "reset UVC\n");
+	usb_ep_disable(uvc->video.ep);
+
+	ret = config_ep_by_speed(f->config->cdev->gadget,
+			&(uvc->func), uvc->video.ep);
+	if (ret)
+		return ret;
+
+	ret = uvc_function_set_appropriate_ep(f, alt);
+	if (ret)
+		return ret;
+
+	usb_ep_enable(uvc->video.ep);
+
+	memset(&v4l2_event, 0, sizeof(v4l2_event));
+	v4l2_event.type = UVC_EVENT_STREAMON;
+	v4l2_event_queue(&uvc->vdev, &v4l2_event);
+	iprec("v4l2 queue UVC_EVENT_STREAMON");
+	return USB_GADGET_DELAYED_STATUS;
+}
+
+static void
+uvc_ep_recover(struct uvc_device *uvc, struct usb_function *f)
+{
+	if (uvc->video.ep->enabled == false)
+		return;
+
+	if (f->config->cdev->gadget->speed == USB_SPEED_SUPER) {
+		uvc->video.ep->desc = &uvc_ss_streaming_ep;
+		uvc->video.ep->mult = SS_EP_ATTRIBUTES + 1;
+		uvc->video.ep->maxburst = SS_EP_BURST + 1;
+		uvc->video.ep->comp_desc = &uvc_ss_streaming_comp;
+	} else {
+		uvc->video.ep->desc = &uvc_hs_streaming_ep;
+		uvc->video.ep->maxpacket = uvc->video.ep->desc->wMaxPacketSize & USB_ENDPOINT_MAXP_MASK;
+		uvc->video.ep->mult = USB_EP_MAXP_MULT(uvc->video.ep->desc->wMaxPacketSize) + 1;
 	}
 }
 
@@ -381,6 +670,7 @@ uvc_function_disable(struct usb_function *f)
 
 	uvc->state = UVC_STATE_DISCONNECTED;
 
+	uvc_ep_recover(uvc, f);
 	usb_ep_disable(uvc->video.ep);
 	usb_ep_disable(uvc->control_ep);
 }
@@ -639,21 +929,66 @@ uvc_function_bind(struct usb_configuration *c, struct usb_function *f)
 		max_packet_size = opts->streaming_maxpacket / 3;
 	}
 
-	uvc_fs_streaming_ep.wMaxPacketSize =
-		cpu_to_le16(min(opts->streaming_maxpacket, 1023U));
+	uvc_fs_streaming_ep.wMaxPacketSize = 0x100;
 	uvc_fs_streaming_ep.bInterval = opts->streaming_interval;
 
-	uvc_hs_streaming_ep.wMaxPacketSize =
-		cpu_to_le16(max_packet_size | ((max_packet_mult - 1) << 11));
+	uvc_fs_streaming_ep1.wMaxPacketSize = 0x200;
+	uvc_fs_streaming_ep1.bInterval = opts->streaming_interval;
+
+	uvc_fs_streaming_ep2.wMaxPacketSize = 0x300;
+	uvc_fs_streaming_ep2.bInterval = opts->streaming_interval;
+
+	uvc_fs_streaming_ep3.wMaxPacketSize = 0x3ff;
+	uvc_fs_streaming_ep3.bInterval = opts->streaming_interval;
+
+	uvc_hs_streaming_ep.wMaxPacketSize = HS_EP_MAX_PACKET_SIZE;
 	uvc_hs_streaming_ep.bInterval = opts->streaming_interval;
 
-	uvc_ss_streaming_ep.wMaxPacketSize = cpu_to_le16(max_packet_size);
+	uvc_hs_streaming_ep1.wMaxPacketSize = HS_EP1_MAX_PACKET_SIZE;
+	uvc_hs_streaming_ep1.bInterval = opts->streaming_interval;
+
+	uvc_hs_streaming_ep2.wMaxPacketSize = HS_EP2_MAX_PACKET_SIZE;
+	uvc_hs_streaming_ep2.bInterval = opts->streaming_interval;
+
+	uvc_hs_streaming_ep3.wMaxPacketSize = HS_EP3_MAX_PACKET_SIZE;
+	uvc_hs_streaming_ep3.bInterval = opts->streaming_interval;
+
+	uvc_ss_streaming_ep.wMaxPacketSize = SS_EP_MAX_PACKET_SIZE;
 	uvc_ss_streaming_ep.bInterval = opts->streaming_interval;
-	uvc_ss_streaming_comp.bmAttributes = max_packet_mult - 1;
-	uvc_ss_streaming_comp.bMaxBurst = opts->streaming_maxburst;
+
+	uvc_ss_streaming_ep1.wMaxPacketSize = SS_EP1_MAX_PACKET_SIZE;
+	uvc_ss_streaming_ep1.bInterval = opts->streaming_interval;
+
+	uvc_ss_streaming_ep2.wMaxPacketSize = SS_EP2_MAX_PACKET_SIZE;
+	uvc_ss_streaming_ep2.bInterval = opts->streaming_interval;
+
+	uvc_ss_streaming_ep3.wMaxPacketSize = SS_EP3_MAX_PACKET_SIZE;
+	uvc_ss_streaming_ep3.bInterval = opts->streaming_interval;
+
+	uvc_ss_streaming_comp.bmAttributes = SS_EP_ATTRIBUTES;
+	uvc_ss_streaming_comp.bMaxBurst = SS_EP_BURST;
+
 	uvc_ss_streaming_comp.wBytesPerInterval =
-		cpu_to_le16(max_packet_size * max_packet_mult *
-			    (opts->streaming_maxburst + 1));
+		cpu_to_le16(uvc_ss_streaming_ep.wMaxPacketSize * (uvc_ss_streaming_comp.bmAttributes + 1)
+			* (uvc_ss_streaming_comp.bMaxBurst + 1));
+
+	uvc_ss_streaming_comp1.bmAttributes = SS_EP1_ATTRIBUTES;
+	uvc_ss_streaming_comp1.bMaxBurst = SS_EP1_BURST;
+	uvc_ss_streaming_comp1.wBytesPerInterval =
+		cpu_to_le16(uvc_ss_streaming_ep1.wMaxPacketSize * (uvc_ss_streaming_comp1.bmAttributes + 1)
+			* (uvc_ss_streaming_comp1.bMaxBurst + 1));
+
+	uvc_ss_streaming_comp2.bmAttributes = SS_EP2_ATTRIBUTES;
+	uvc_ss_streaming_comp2.bMaxBurst = SS_EP2_BURST;
+	uvc_ss_streaming_comp2.wBytesPerInterval =
+		cpu_to_le16(uvc_ss_streaming_ep2.wMaxPacketSize * (uvc_ss_streaming_comp2.bmAttributes + 1)
+			* (uvc_ss_streaming_comp2.bMaxBurst + 1));
+
+	uvc_ss_streaming_comp3.bmAttributes = SS_EP3_ATTRIBUTES;
+	uvc_ss_streaming_comp3.bMaxBurst = SS_EP3_BURST;
+	uvc_ss_streaming_comp3.wBytesPerInterval =
+		cpu_to_le16(uvc_ss_streaming_ep3.wMaxPacketSize * (uvc_ss_streaming_comp3.bmAttributes + 1)
+			* (uvc_ss_streaming_comp3.bMaxBurst + 1));
 
 	/* Allocate endpoints. */
 	ep = usb_ep_autoconfig(cdev->gadget, &uvc_control_ep);
@@ -681,6 +1016,18 @@ uvc_function_bind(struct usb_configuration *c, struct usb_function *f)
 	uvc_hs_streaming_ep.bEndpointAddress = uvc->video.ep->address;
 	uvc_ss_streaming_ep.bEndpointAddress = uvc->video.ep->address;
 
+	uvc_fs_streaming_ep1.bEndpointAddress = uvc->video.ep->address;
+	uvc_hs_streaming_ep1.bEndpointAddress = uvc->video.ep->address;
+	uvc_ss_streaming_ep1.bEndpointAddress = uvc->video.ep->address;
+
+	uvc_fs_streaming_ep2.bEndpointAddress = uvc->video.ep->address;
+	uvc_hs_streaming_ep2.bEndpointAddress = uvc->video.ep->address;
+	uvc_ss_streaming_ep2.bEndpointAddress = uvc->video.ep->address;
+
+	uvc_fs_streaming_ep3.bEndpointAddress = uvc->video.ep->address;
+	uvc_hs_streaming_ep3.bEndpointAddress = uvc->video.ep->address;
+	uvc_ss_streaming_ep3.bEndpointAddress = uvc->video.ep->address;
+
 	us = usb_gstrings_attach(cdev, uvc_function_strings,
 				 ARRAY_SIZE(uvc_en_us_strings));
 	if (IS_ERR(us)) {
@@ -692,6 +1039,9 @@ uvc_function_bind(struct usb_configuration *c, struct usb_function *f)
 	ret = us[UVC_STRING_STREAMING_IDX].id;
 	uvc_streaming_intf_alt0.iInterface = ret;
 	uvc_streaming_intf_alt1.iInterface = ret;
+	uvc_streaming_intf_alt2.iInterface = ret;
+	uvc_streaming_intf_alt3.iInterface = ret;
+	uvc_streaming_intf_alt4.iInterface = ret;
 
 	/* Allocate interface IDs. */
 	if ((ret = usb_interface_id(c, f)) < 0)
@@ -704,6 +1054,9 @@ uvc_function_bind(struct usb_configuration *c, struct usb_function *f)
 		goto error;
 	uvc_streaming_intf_alt0.bInterfaceNumber = ret;
 	uvc_streaming_intf_alt1.bInterfaceNumber = ret;
+	uvc_streaming_intf_alt2.bInterfaceNumber = ret;
+	uvc_streaming_intf_alt3.bInterfaceNumber = ret;
+	uvc_streaming_intf_alt4.bInterfaceNumber = ret;
 	uvc->streaming_intf = ret;
 
 	/* Copy descriptors */
@@ -793,6 +1146,11 @@ static struct usb_function_instance *uvc_alloc_inst(void)
 	struct uvc_color_matching_descriptor *md;
 	struct uvc_descriptor_header **ctl_cls;
 
+	struct UVC_EXTENSION_UNIT_DESCRIPTOR(1, 2) *ed;
+	/* GUID of the UVC H.264 extension unit */
+    static char extension_guid[] = {0x41, 0x76, 0x9E, 0xA2, 0x04, 0xDE, 0xE3, 0x47,
+		0x8B, 0x2B, 0xF4, 0x34, 0x1A, 0xFF, 0x00, 0x3B};
+
 	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
 	if (!opts)
 		return ERR_PTR(-ENOMEM);
@@ -827,6 +1185,20 @@ static struct usb_function_instance *uvc_alloc_inst(void)
 	pd->bmControls[1]		= 0;
 	pd->iProcessing			= 0;
 
+	ed = &opts->uvc_extension;
+	ed->bLength			= UVC_DT_EXTENSION_UNIT_SIZE(1, 2);
+	ed->bDescriptorType		= USB_DT_CS_INTERFACE;
+	ed->bDescriptorSubType		= UVC_VC_EXTENSION_UNIT;
+	ed->bUnitID			= 10;
+	memcpy(ed->guidExtensionCode, extension_guid, sizeof(extension_guid));
+	ed->bNrInPins			= 1;
+	ed->baSourceID[0]      	= 2;
+	ed->bNumControls		= 15;
+	ed->bControlSize		= 2;
+	ed->bmControls[0]		= 1;
+	ed->bmControls[1]		= 0;
+	ed->iExtension			= 0;
+
 	od = &opts->uvc_output_terminal;
 	od->bLength			= UVC_DT_OUTPUT_TERMINAL_SIZE;
 	od->bDescriptorType		= USB_DT_CS_INTERFACE;
@@ -850,8 +1222,9 @@ static struct usb_function_instance *uvc_alloc_inst(void)
 	ctl_cls[0] = NULL;	/* assigned elsewhere by configfs */
 	ctl_cls[1] = (struct uvc_descriptor_header *)cd;
 	ctl_cls[2] = (struct uvc_descriptor_header *)pd;
-	ctl_cls[3] = (struct uvc_descriptor_header *)od;
-	ctl_cls[4] = NULL;	/* NULL-terminate */
+	ctl_cls[3] = (struct uvc_descriptor_header *)ed;
+	ctl_cls[4] = (struct uvc_descriptor_header *)od;
+	ctl_cls[5] = NULL;	/* NULL-terminate */
 	opts->fs_control =
 		(const struct uvc_descriptor_header * const *)ctl_cls;
 
@@ -860,13 +1233,13 @@ static struct usb_function_instance *uvc_alloc_inst(void)
 	ctl_cls[0] = NULL;	/* assigned elsewhere by configfs */
 	ctl_cls[1] = (struct uvc_descriptor_header *)cd;
 	ctl_cls[2] = (struct uvc_descriptor_header *)pd;
-	ctl_cls[3] = (struct uvc_descriptor_header *)od;
-	ctl_cls[4] = NULL;	/* NULL-terminate */
+	ctl_cls[3] = (struct uvc_descriptor_header *)ed;
+	ctl_cls[4] = (struct uvc_descriptor_header *)od;
+	ctl_cls[5] = NULL;	/* NULL-terminate */
 	opts->ss_control =
 		(const struct uvc_descriptor_header * const *)ctl_cls;
 
 	opts->streaming_interval = 1;
-	opts->streaming_maxpacket = 1024;
 
 	uvcg_attach_configfs(opts);
 	return &opts->func_inst;

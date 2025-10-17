@@ -209,6 +209,25 @@ static int pl061_irq_type(struct irq_data *d, unsigned trigger)
 	return 0;
 }
 
+#ifdef CONFIG_ARCH_BSP
+static irqreturn_t pl061_irq_handler(int irq, void *data)
+{
+	unsigned long pending;
+	int offset;
+	struct gpio_chip *gc = data;
+	struct pl061 *pl061 = container_of(gc, struct pl061, gc);
+
+	pending = readb(pl061->base + GPIOMIS);
+	writeb(pending, pl061->base + GPIOIC);
+	if (pending) {
+		for_each_set_bit(offset, &pending, PL061_GPIO_NR)
+			generic_handle_irq(irq_find_mapping(gc->irq.domain,
+							    offset));
+	}
+
+	return IRQ_HANDLED;
+}
+#else
 static void pl061_irq_handler(struct irq_desc *desc)
 {
 	unsigned long pending;
@@ -228,6 +247,7 @@ static void pl061_irq_handler(struct irq_desc *desc)
 
 	chained_irq_exit(irqchip, desc);
 }
+#endif
 
 static void pl061_irq_mask(struct irq_data *d)
 {
@@ -287,6 +307,9 @@ static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 	struct device *dev = &adev->dev;
 	struct pl061 *pl061;
 	int ret, irq;
+#ifdef CONFIG_ARCH_BSP
+	int gpio_idx;
+#endif
 
 	pl061 = devm_kzalloc(dev, sizeof(*pl061), GFP_KERNEL);
 	if (pl061 == NULL)
@@ -302,7 +325,20 @@ static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 		pl061->gc.free = gpiochip_generic_free;
 	}
 
+#ifdef CONFIG_ARCH_BSP
+	if (dev->of_node) {
+		gpio_idx = of_alias_get_id(dev->of_node, "gpio");
+		if (gpio_idx < 0)
+			return -ENOMEM;
+		pl061->gc.base = gpio_idx * PL061_GPIO_NR;
+	}
+
+	if (pl061->gc.base < 0)
+		pl061->gc.base = -1;
+#else
 	pl061->gc.base = -1;
+#endif
+
 	pl061->gc.get_direction = pl061_get_direction;
 	pl061->gc.direction_input = pl061_direction_input;
 	pl061->gc.direction_output = pl061_direction_output;
@@ -342,8 +378,21 @@ static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 		dev_info(&adev->dev, "could not add irqchip\n");
 		return ret;
 	}
+#ifdef CONFIG_ARCH_BSP
+	ret = devm_request_irq(dev, irq, pl061_irq_handler, IRQF_SHARED,
+			dev_name(dev), &pl061->gc);
+	if (ret) {
+		dev_info(dev, "request irq failed: %d\n", ret);
+		return ret;
+	}
+
+	/* Set the parent IRQ for all affected IRQs */
+	for (gpio_idx = 0; gpio_idx < pl061->gc.ngpio; gpio_idx++)
+		irq_set_parent(irq_find_mapping(pl061->gc.irq.domain, gpio_idx), irq);
+#else
 	gpiochip_set_chained_irqchip(&pl061->gc, &pl061->irq_chip,
 				     irq, pl061_irq_handler);
+#endif
 
 	amba_set_drvdata(adev, pl061);
 	dev_info(&adev->dev, "PL061 GPIO chip @%pa registered\n",

@@ -121,6 +121,7 @@ ENTRY(stext)
 	bl	__vet_atags
 #ifdef CONFIG_SMP_ON_UP
 	bl	__fixup_smp
+
 #endif
 #ifdef CONFIG_ARM_PATCH_PHYS_VIRT
 	bl	__fixup_pv_table

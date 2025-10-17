@@ -1,0 +1,88 @@
+#
+# Phy drivers for Vendor platforms
+#
+config PHY_BSP_USB2
+	bool
+	depends on (!ARCH_SS919V100 && !ARCH_SS015V100 && !ARCH_SS101V200 && \
+		!ARCH_SS101V500 && !ARCH_SS101V300 && !ARCH_SS101V600 && \
+		!ARCH_SS928V100 && !ARCH_SS927V100)
+	default y
+	help
+	  Support for PHY on Vendor Socs. This Phy supports
+	  USB 1.5Mb/s, USB 12Mb/s, USB 480Mb/s speeds. It suppots one
+	  USB host port to accept one USB device. Support init the phy
+	  and adjust phy Eye Diagram.
+
+config PHY_BSP_USB3
+	bool
+	depends on (ARCH_SS918V100 || ARCH_SS318V100 || ARCH_SS919V100 || \
+		ARCH_SS015V100 || ARCH_SS013V100 || ARCH_SS528V100 || \
+		ARCH_SS625V100 || ARCH_SS928V100 || ARCH_SS927V100)
+	default y
+	help
+	  Support for PHY on Vendor Socs. This Phy supports
+	  USB3.0 and Compatible with USB2.0. It suppots one
+	  USB host port to accept one USB device. Support init the phy
+	  and adjust phy Eye Diagram.
+
+config BSP_USB_PHY
+	bool "Vendor USB PHY driver"
+	depends on (!ARCH_SS101V200 && !ARCH_SS101V500 && !ARCH_SS101V300 && \
+		!ARCH_SS101V600)
+	default y
+	help
+	  Support for PHY on Vendor Socs. This Phy supports
+	  USB 1.5Mb/s, USB 12Mb/s, USB 480Mb/s speeds. It suppots one
+	  USB host port to accept one USB device. Support init the phy
+	  and adjust phy Eye Diagram.
+
+config PHY_BSP_XVP_USB2
+	tristate "Vendor XVP USB2 PHY Driver"
+	depends on (ARCH_SS101V200 || ARCH_SS101V500 || ARCH_SS101V300 || \
+		ARCH_SS101V600)
+	select GENERIC_PHY
+	default y
+	help
+	  Support for PHY on Vendor Socs. This Phy supports
+	  USB 1.5Mb/s, USB 12Mb/s, USB 480Mb/s speeds. It suppots one
+	  USB host port to accept one USB device. Support init the phy
+	  and adjust phy Eye Diagram.
+
+menuconfig USB_MODE_OPTION
+	bool "Vendor USB related configuration"
+	depends on (!ARCH_SS101V200 && !ARCH_SS101V500 && !ARCH_SS101V300 && \
+		!ARCH_SS101V600 && !ARCH_SS528V100 && !ARCH_SS625V100 &&	\
+		!ARCH_SS524V100 && !ARCH_SS522V100 && !ARCH_SS615V100 &&    \
+		!ARCH_SS522V101)
+
+if USB_MODE_OPTION
+
+config USB_DRD0_IN_HOST
+	bool "USB DRD0 Mode Select HOST"
+	help
+	  Select whether the USB drd0 is working in host mode.
+
+config USB_DRD0_IN_DEVICE
+	bool "USB DRD0 Mode Select DEVICE"
+	depends on !USB_DRD0_IN_HOST
+	depends on (!ARCH_SS528V100 && !ARCH_SS625V100 && !ARCH_SS524V100 && \
+		!ARCH_SS522V100 && !ARCH_SS615V100 && !ARCH_SS522V101)
+	help
+	  Select whether the USB drd0 is working in device mode.
+
+config USB_DRD1_IN_HOST
+	bool "USB DRD1 Mode Select HOST"
+	depends on (ARCH_SS918V100 || ARCH_SS318V100 || ARCH_SS919V100 ||	\
+		ARCH_SS015V100 || ARCH_SS013V100)
+	help
+	  Select whether the USB drd1 is working in host mode.
+
+config USB_DRD1_IN_DEVICE
+	bool "USB DRD1 Mode Select DEVICE"
+	depends on (!USB_DRD1_IN_HOST && !USB_DRD0_IN_DEVICE)
+	depends on (ARCH_SS918V100 || ARCH_SS318V100 || ARCH_SS919V100 || \
+		ARCH_SS015V100 || ARCH_SS013V100)
+	help
+	  Select whether the USB drd1 is working in device mode.
+
+endif # USB_MODE_OPTION

@@ -223,8 +223,18 @@ static void __init reserve_elfcorehdr(void)
  */
 static phys_addr_t __init max_zone_dma_phys(void)
 {
+#ifdef CONFIG_ARCH_BSP
+	phys_addr_t max_dma_phys;
+	extern phys_addr_t get_zones_start(void);
+#endif
 	phys_addr_t offset = memblock_start_of_DRAM() & GENMASK_ULL(63, 32);
+
+#ifdef CONFIG_ARCH_BSP
+	max_dma_phys =  min(offset + (1ULL << 32), memblock_end_of_DRAM());
+	return min(max_dma_phys, get_zones_start());
+#else
 	return min(offset + (1ULL << 32), memblock_end_of_DRAM());
+#endif
 }
 
 #ifdef CONFIG_NUMA

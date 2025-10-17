@@ -324,6 +324,19 @@ void lockdep_assert_cpus_held(void)
 
 	percpu_rwsem_assert_held(&cpu_hotplug_lock);
 }
+static RAW_NOTIFIER_HEAD(cpu_chain);
+
+
+/* Need to know about CPUs going up/down? */
+int register_cpu_notifier(struct notifier_block *nb)
+{
+	int ret;
+	cpu_maps_update_begin();
+	ret = raw_notifier_chain_register(&cpu_chain, nb);
+	cpu_maps_update_done();
+	return ret;
+}
+EXPORT_SYMBOL(register_cpu_notifier);
 
 /*
  * Wait for currently running CPU hotplug operations to complete (if any) and

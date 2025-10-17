@@ -234,6 +234,9 @@ vcs_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 	ssize_t ret;
 	char *con_buf;
 
+	if (use_unicode(inode))
+		return -EOPNOTSUPP;
+
 	con_buf = (char *) __get_free_page(GFP_KERNEL);
 	if (!con_buf)
 		return -ENOMEM;

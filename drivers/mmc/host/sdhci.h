@@ -86,6 +86,7 @@
 #define   SDHCI_CTRL_ADMA1	0x08
 #define   SDHCI_CTRL_ADMA32	0x10
 #define   SDHCI_CTRL_ADMA64	0x18
+#define   SDHCI_CTRL_ADMA3	0x18
 #define   SDHCI_CTRL_8BITBUS	0x20
 #define  SDHCI_CTRL_CDTEST_INS	0x40
 #define  SDHCI_CTRL_CDTEST_EN	0x80
@@ -110,6 +111,7 @@
 #define  SDHCI_DIV_MASK_LEN	8
 #define  SDHCI_DIV_HI_MASK	0x300
 #define  SDHCI_PROG_CLOCK_MODE	0x0020
+#define  SDHCI_CLOCK_PLL_EN	0x0008
 #define  SDHCI_CLOCK_CARD_EN	0x0004
 #define  SDHCI_CLOCK_INT_STABLE	0x0002
 #define  SDHCI_CLOCK_INT_EN	0x0001
@@ -134,6 +136,7 @@
 #define  SDHCI_INT_CARD_REMOVE	0x00000080
 #define  SDHCI_INT_CARD_INT	0x00000100
 #define  SDHCI_INT_RETUNE	0x00001000
+#define  SDHCI_INT_CQE		0x00004000
 #define  SDHCI_INT_CQE		0x00004000
 #define  SDHCI_INT_ERROR	0x00008000
 #define  SDHCI_INT_TIMEOUT	0x00010000
@@ -168,10 +171,12 @@
 #define SDHCI_CQE_INT_MASK (SDHCI_CQE_INT_ERR_MASK | SDHCI_INT_CQE)
 
 #define SDHCI_AUTO_CMD_STATUS	0x3C
+#define SDHCI_AUTO_CMD12_NOT_EXEC	0x0001
 #define  SDHCI_AUTO_CMD_TIMEOUT	0x00000002
 #define  SDHCI_AUTO_CMD_CRC	0x00000004
 #define  SDHCI_AUTO_CMD_END_BIT	0x00000008
 #define  SDHCI_AUTO_CMD_INDEX	0x00000010
+#define SDHCI_AUTO_CMD12_NOT_ISSUED	0x0080
 
 #define SDHCI_HOST_CONTROL2		0x3E
 #define  SDHCI_CTRL_UHS_MASK		0x0007
@@ -180,7 +185,7 @@
 #define   SDHCI_CTRL_UHS_SDR50		0x0002
 #define   SDHCI_CTRL_UHS_SDR104		0x0003
 #define   SDHCI_CTRL_UHS_DDR50		0x0004
-#define   SDHCI_CTRL_HS400		0x0005 /* Non-standard */
+#define   SDHCI_CTRL_HS400		0x0007 /* Non-standard */
 #define  SDHCI_CTRL_VDD_180		0x0008
 #define  SDHCI_CTRL_DRV_TYPE_MASK	0x0030
 #define   SDHCI_CTRL_DRV_TYPE_B		0x0000
@@ -189,6 +194,9 @@
 #define   SDHCI_CTRL_DRV_TYPE_D		0x0030
 #define  SDHCI_CTRL_EXEC_TUNING		0x0040
 #define  SDHCI_CTRL_TUNED_CLK		0x0080
+#define  SDHCI_CTRL_HOST_VER4_ENABLE	0x1000
+#define  SDHCI_CTRL_ADDRESSING_64BIT	0x2000
+#define  SDHCI_CTRL_ASYNC_INT_ENABLE	0x4000
 #define  SDHCI_CTRL_PRESET_VAL_ENABLE	0x8000
 
 #define SDHCI_CAPABILITIES	0x40
@@ -210,6 +218,7 @@
 #define  SDHCI_CAN_VDD_300	0x02000000
 #define  SDHCI_CAN_VDD_180	0x04000000
 #define  SDHCI_CAN_64BIT	0x10000000
+#define  SDHCI_CAN_ASYNC_INT	0x20000000
 
 #define  SDHCI_SUPPORT_SDR50	0x00000001
 #define  SDHCI_SUPPORT_SDR104	0x00000002
@@ -224,6 +233,7 @@
 #define  SDHCI_RETUNING_MODE_SHIFT		14
 #define  SDHCI_CLOCK_MUL_MASK	0x00FF0000
 #define  SDHCI_CLOCK_MUL_SHIFT	16
+#define  SDHCI_CAN_DO_ADMA3	0x08000000
 #define  SDHCI_SUPPORT_HS400	0x80000000 /* Non-standard */
 
 #define SDHCI_CAPABILITIES_1	0x44
@@ -265,6 +275,9 @@
 #define SDHCI_PRESET_SDCLK_FREQ_MASK   0x3FF
 #define SDHCI_PRESET_SDCLK_FREQ_SHIFT	0
 
+#define SDHCI_ADMA3_ID_ADDR_LOW	0x78
+#define SDHCI_ADMA3_ID_ADDR_HI	0x7C
+
 #define SDHCI_SLOT_INT_STATUS	0xFC
 
 #define SDHCI_HOST_VERSION	0xFE
@@ -275,6 +288,9 @@
 #define   SDHCI_SPEC_100	0
 #define   SDHCI_SPEC_200	1
 #define   SDHCI_SPEC_300	2
+#define   SDHCI_SPEC_400	3
+#define   SDHCI_SPEC_410	4
+#define   SDHCI_SPEC_420	5
 
 /*
  * End of controller registers.
@@ -288,6 +304,7 @@
  */
 #define SDHCI_DEFAULT_BOUNDARY_SIZE  (512 * 1024)
 #define SDHCI_DEFAULT_BOUNDARY_ARG   (ilog2(SDHCI_DEFAULT_BOUNDARY_SIZE) - 12)
+#define SDHCI_DMA_BOUNDARY_SIZE	     (0x1 << 27)
 
 /* ADMA2 32-bit DMA descriptor size */
 #define SDHCI_ADMA2_32_DESC_SZ	8
@@ -313,6 +330,12 @@ struct sdhci_adma2_32_desc {
 /* ADMA2 64-bit DMA descriptor size */
 #define SDHCI_ADMA2_64_DESC_SZ	12
 
+/* ADMA3 32-bit DMA descriptor size */
+#define SDHCI_ADMA3_32_DESC_SZ	8
+
+/* ADMA3 64-bit DMA descriptor size */
+#define SDHCI_ADMA3_64_DESC_SZ	16
+
 /*
  * ADMA2 64-bit descriptor. Note 12-byte descriptor can't always be 8-byte
  * aligned.
@@ -327,6 +350,9 @@ struct sdhci_adma2_64_desc {
 #define ADMA2_TRAN_VALID	0x21
 #define ADMA2_NOP_END_VALID	0x3
 #define ADMA2_END		0x2
+#define ADMA2_LINK_VALID	0x31
+#define ADMA3_CMD_VALID		0x9
+#define ADMA3_END		0x3b
 
 /*
  * Maximum segments assuming a 512KiB maximum requisition size and a minimum
@@ -349,6 +375,19 @@ enum sdhci_cookie {
 	COOKIE_UNMAPPED,
 	COOKIE_PRE_MAPPED,	/* mapped by sdhci_pre_req() */
 	COOKIE_MAPPED,		/* mapped by sdhci_prepare_data() */
+};
+
+struct card_info {
+	unsigned int     card_type;
+	unsigned char    timing;
+	bool enhanced_strobe;
+	unsigned char    card_connect;
+#define CARD_CONNECT    1
+#define CARD_DISCONNECT 0
+	unsigned int     card_support_clock; /* clock rate */
+	unsigned int     card_state;      /* (our) card state */
+	unsigned int     sd_bus_speed;
+	unsigned int     ssr[16];
 };
 
 struct sdhci_host {
@@ -448,6 +487,7 @@ struct sdhci_host {
 #define SDHCI_QUIRK2_ACMD23_BROKEN			(1<<14)
 /* Broken Clock divider zero in controller */
 #define SDHCI_QUIRK2_CLOCK_DIV_ZERO_BROKEN		(1<<15)
+#define SDHCI_QUIRK2_BROKEN_ADMA3			(1<<16)
 /* Controller has CRC in 136 bit Command Response */
 #define SDHCI_QUIRK2_RSP_136_HAS_CRC			(1<<16)
 /*
@@ -491,6 +531,8 @@ struct sdhci_host {
 #define SDHCI_SIGNALING_330	(1<<14)	/* Host is capable of 3.3V signaling */
 #define SDHCI_SIGNALING_180	(1<<15)	/* Host is capable of 1.8V signaling */
 #define SDHCI_SIGNALING_120	(1<<16)	/* Host is capable of 1.2V signaling */
+#define SDHCI_USE_ADMA3		(1<<17)	/* Host is ADMA3 capable */
+#define SDHCI_HOST_VER4_ENABLE	(1<<18) /* Host version 4 enable */
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -520,14 +562,21 @@ struct sdhci_host {
 
 	void *adma_table;	/* ADMA descriptor table */
 	void *align_buffer;	/* Bounce buffer */
+	void *adma3_table;	/* ADMA3 integrated descriptor table */
+	void *cmd_table;	/* ADMA3 command descriptor table */
 
 	size_t adma_table_sz;	/* ADMA descriptor table size */
 	size_t align_buffer_sz;	/* Bounce buffer size */
+	size_t adma3_table_sz;	/* ADMA3 integrated descriptor table size */
+	size_t cmd_table_sz;	/* ADMA3 command descriptor table size */
 
 	dma_addr_t adma_addr;	/* Mapped ADMA descr. table */
 	dma_addr_t align_addr;	/* Mapped bounce buffer */
+	dma_addr_t adma3_addr;	/* Mapped ADMA3 integrated descr. table */
+	dma_addr_t cmd_addr;	/* Mapped ADMA3 command descr. table */
 
 	unsigned int desc_sz;	/* ADMA descriptor size */
+	unsigned int adma3_desc_sz;	/* ADMA3 integrated descriptor size */
 
 	struct tasklet_struct finish_tasklet;	/* Tasklet structures */
 
@@ -570,6 +619,10 @@ struct sdhci_host {
 
 	u64			data_timeout;
 
+	u32			is_tuning;
+	unsigned int		error_count;
+	struct card_info 	c_info;
+
 	unsigned long private[0] ____cacheline_aligned;
 };
 
@@ -608,6 +661,9 @@ struct sdhci_ops {
 	void    (*adma_workaround)(struct sdhci_host *host, u32 intmask);
 	void    (*card_event)(struct sdhci_host *host);
 	void	(*voltage_switch)(struct sdhci_host *host);
+	void	(*init)(struct sdhci_host *host);
+	int	(*start_signal_voltage_switch)(struct sdhci_host *host,
+					       struct mmc_ios *ios);
 };
 
 #ifdef CONFIG_MMC_SDHCI_IO_ACCESSORS

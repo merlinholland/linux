@@ -173,6 +173,7 @@ machine-$(CONFIG_ARCH_FOOTBRIDGE)	+= footbridge
 machine-$(CONFIG_ARCH_GEMINI)		+= gemini
 machine-$(CONFIG_ARCH_HIGHBANK)		+= highbank
 machine-$(CONFIG_ARCH_HISI)		+= hisi
+machine-$(CONFIG_ARCH_BSP)		+= bsp
 machine-$(CONFIG_ARCH_INTEGRATOR)	+= integrator
 machine-$(CONFIG_ARCH_IOP13XX)		+= iop13xx
 machine-$(CONFIG_ARCH_IOP32X)		+= iop32x
@@ -238,6 +239,8 @@ plat-$(CONFIG_PLAT_ORION)	+= orion
 plat-$(CONFIG_PLAT_PXA)		+= pxa
 plat-$(CONFIG_PLAT_S3C24XX)	+= samsung
 plat-$(CONFIG_PLAT_VERSATILE)	+= versatile
+plat-$(CONFIG_ARCH_SS918V100) += ss918v100
+plat-$(CONFIG_ARCH_SS318V100) += ss318v100
 
 ifeq ($(CONFIG_ARCH_EBSA110),y)
 # This is what happens if you forget the IOCS16 line.
@@ -270,6 +273,10 @@ else
 KBUILD_CPPFLAGS += $(patsubst %,-I$(srctree)/%include,$(machdirs) $(platdirs))
 endif
 endif
+endif
+
+ifeq ($(CONFIG_ARCH_BSP),y)
+KBUILD_CPPFLAGS += $(patsubst %,-I%include,$(machdirs) $(platdirs))
 endif
 
 export	TEXT_OFFSET GZFLAGS MMUEXT

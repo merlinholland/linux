@@ -131,6 +131,23 @@ static inline int i2c_master_send_dmasafe(const struct i2c_client *client,
  */
 extern int i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs,
 			int num);
+
+#ifdef CONFIG_ARCH_BSP
+
+extern int bsp_i2c_master_send(const struct i2c_client *client, const char *buf,
+					int count);
+
+extern int bsp_i2c_master_send_mul_reg(const struct i2c_client *client, const char *buf,
+					unsigned int count, unsigned int reg_data_width);
+
+extern int bsp_i2c_master_recv(const struct i2c_client *client, char *buf,
+					int count);
+
+extern int bsp_i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs,
+					int num);
+
+#endif
+
 /* Unlocked flavor */
 extern int __i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs,
 			  int num);

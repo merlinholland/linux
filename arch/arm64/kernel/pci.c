@@ -33,6 +33,18 @@ int pcibios_alloc_irq(struct pci_dev *dev)
 
 	return 0;
 }
+#else
+#ifdef CONFIG_ARCH_BSP
+/*
+ * Try to assign the IRQ number when probing a new device
+ */
+int pcibios_alloc_irq(struct pci_dev *dev)
+{
+	dev->irq = of_irq_parse_and_map_pci(dev, 0, 0);
+	
+	return 0;
+}
+#endif
 #endif
 
 /*

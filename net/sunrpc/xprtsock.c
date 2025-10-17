@@ -557,7 +557,7 @@ static int xs_local_send_request(struct rpc_task *task)
 			-status);
 		/* fall through */
 	case -EPIPE:
-		xs_close(xprt);
+		xprt_force_disconnect(xprt);
 		status = -ENOTCONN;
 	}
 
@@ -845,7 +845,17 @@ static void xs_reset_transport(struct sock_xprt *transport)
 
 	if (sk == NULL)
 		return;
-
+	/*
+	 * Make sure we're calling this in a context from which it is safe
+	 * to call __fput_sync(). In practice that means rpciod and the
+	 * system workqueue.
+	 */
+	if (!(current->flags & PF_WQ_WORKER)) {
+		WARN_ON_ONCE(1);
+		set_bit(XPRT_CLOSE_WAIT, &xprt->state);
+		return;
+	}
+ 
 	if (atomic_read(&transport->xprt.swapper))
 		sk_clear_memalloc(sk);
 
@@ -1429,6 +1439,12 @@ static int xs_tcp_bc_up(struct svc_serv *serv, struct net *net)
 	if (ret < 0)
 		return ret;
 	return 0;
+}
+
+static struct svc_xprt *xs_tcp_bc_get_xprt(struct svc_serv *serv,
+					   struct net *net)
+{
+	return svc_find_xprt(serv, "tcp-bc", net, AF_UNSPEC, 0);
 }
 
 static size_t xs_tcp_bc_maxpayload(struct rpc_xprt *xprt)
@@ -2831,6 +2847,7 @@ static const struct rpc_xprt_ops xs_tcp_ops = {
 #ifdef CONFIG_SUNRPC_BACKCHANNEL
 	.bc_setup		= xprt_setup_bc,
 	.bc_up			= xs_tcp_bc_up,
+	.bc_get_xprt		= xs_tcp_bc_get_xprt,
 	.bc_maxpayload		= xs_tcp_bc_maxpayload,
 	.bc_free_rqst		= xprt_free_bc_rqst,
 	.bc_destroy		= xprt_destroy_bc,

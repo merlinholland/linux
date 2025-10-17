@@ -48,6 +48,16 @@ static inline struct f_uac1 *func_to_uac1(struct usb_function *f)
 /* Number of streaming interfaces */
 #define F_AUDIO_NUM_INTERFACES		2
 
+static struct usb_interface_assoc_descriptor uac_iad = {
+	.bLength = sizeof(uac_iad),
+	.bDescriptorType = USB_DT_INTERFACE_ASSOCIATION,
+	.bFirstInterface = 0,
+	.bInterfaceCount = 3,
+	.bFunctionClass = USB_CLASS_AUDIO,
+	.bFunctionSubClass = 0,
+	.bFunctionProtocol = UAC_VERSION_1,
+};
+
 /* B.3.1  Standard AC Interface Descriptor */
 static struct usb_interface_descriptor ac_interface_desc = {
 	.bLength =		USB_DT_INTERFACE_SIZE,
@@ -246,7 +256,16 @@ static struct uac_iso_endpoint_descriptor as_iso_in_desc = {
 	.wLockDelay =		0,
 };
 
+static struct usb_ss_ep_comp_descriptor as_ss_ep_comp = {
+	.bLength        = sizeof(as_ss_ep_comp),
+	.bDescriptorType    = USB_DT_SS_ENDPOINT_COMP,
+	.bMaxBurst =		0,
+	.bmAttributes =		0,
+	.wBytesPerInterval = cpu_to_le16(UAC1_OUT_EP_MAX_PACKET_SIZE),
+};
+
 static struct usb_descriptor_header *f_audio_desc[] = {
+	(struct usb_descriptor_header *)&uac_iad,
 	(struct usb_descriptor_header *)&ac_interface_desc,
 	(struct usb_descriptor_header *)&ac_header_desc,
 
@@ -271,6 +290,38 @@ static struct usb_descriptor_header *f_audio_desc[] = {
 	(struct usb_descriptor_header *)&as_in_type_i_desc,
 
 	(struct usb_descriptor_header *)&as_in_ep_desc,
+	(struct usb_descriptor_header *)&as_iso_in_desc,
+	NULL,
+};
+
+static struct usb_descriptor_header *f_audio_ss_desc[] = {
+	(struct usb_descriptor_header *)&uac_iad,
+	(struct usb_descriptor_header *)&ac_interface_desc,
+	(struct usb_descriptor_header *)&ac_header_desc,
+
+	(struct usb_descriptor_header *)&usb_out_it_desc,
+	(struct usb_descriptor_header *)&io_out_ot_desc,
+	(struct usb_descriptor_header *)&io_in_it_desc,
+	(struct usb_descriptor_header *)&usb_in_ot_desc,
+
+	(struct usb_descriptor_header *)&as_out_interface_alt_0_desc,
+	(struct usb_descriptor_header *)&as_out_interface_alt_1_desc,
+	(struct usb_descriptor_header *)&as_out_header_desc,
+
+	(struct usb_descriptor_header *)&as_out_type_i_desc,
+
+	(struct usb_descriptor_header *)&as_out_ep_desc,
+	(struct usb_descriptor_header *)&as_ss_ep_comp,
+	(struct usb_descriptor_header *)&as_iso_out_desc,
+
+	(struct usb_descriptor_header *)&as_in_interface_alt_0_desc,
+	(struct usb_descriptor_header *)&as_in_interface_alt_1_desc,
+	(struct usb_descriptor_header *)&as_in_header_desc,
+
+	(struct usb_descriptor_header *)&as_in_type_i_desc,
+
+	(struct usb_descriptor_header *)&as_in_ep_desc,
+	(struct usb_descriptor_header *)&as_ss_ep_comp,
 	(struct usb_descriptor_header *)&as_iso_in_desc,
 	NULL,
 };
@@ -523,6 +574,7 @@ static int f_audio_bind(struct usb_configuration *c, struct usb_function *f)
 	us = usb_gstrings_attach(cdev, uac1_strings, ARRAY_SIZE(strings_uac1));
 	if (IS_ERR(us))
 		return PTR_ERR(us);
+	uac_iad.iFunction = us[STR_AC_IF].id;
 	ac_interface_desc.iInterface = us[STR_AC_IF].id;
 	usb_out_it_desc.iTerminal = us[STR_USB_OUT_IT].id;
 	usb_out_it_desc.iChannelNames = us[STR_USB_OUT_IT_CH_NAMES].id;
@@ -559,6 +611,7 @@ static int f_audio_bind(struct usb_configuration *c, struct usb_function *f)
 	status = usb_interface_id(c, f);
 	if (status < 0)
 		goto fail;
+	uac_iad.bFirstInterface = status;
 	ac_interface_desc.bInterfaceNumber = status;
 	uac1->ac_intf = status;
 	uac1->ac_alt = 0;
@@ -568,6 +621,7 @@ static int f_audio_bind(struct usb_configuration *c, struct usb_function *f)
 		goto fail;
 	as_out_interface_alt_0_desc.bInterfaceNumber = status;
 	as_out_interface_alt_1_desc.bInterfaceNumber = status;
+	ac_header_desc.baInterfaceNr[0] = status;
 	uac1->as_out_intf = status;
 	uac1->as_out_alt = 0;
 
@@ -576,6 +630,7 @@ static int f_audio_bind(struct usb_configuration *c, struct usb_function *f)
 		goto fail;
 	as_in_interface_alt_0_desc.bInterfaceNumber = status;
 	as_in_interface_alt_1_desc.bInterfaceNumber = status;
+	ac_header_desc.baInterfaceNr[1] = status;
 	uac1->as_in_intf = status;
 	uac1->as_in_alt = 0;
 
@@ -597,8 +652,8 @@ static int f_audio_bind(struct usb_configuration *c, struct usb_function *f)
 	audio->in_ep->desc = &as_in_ep_desc;
 
 	/* copy descriptors, and track endpoint copies */
-	status = usb_assign_descriptors(f, f_audio_desc, f_audio_desc, NULL,
-					NULL);
+	status = usb_assign_descriptors(f, f_audio_desc, f_audio_desc,
+				f_audio_ss_desc, NULL);
 	if (status)
 		goto fail;
 

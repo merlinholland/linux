@@ -1066,6 +1066,17 @@ static void visual_deinit(struct vc_data *vc)
 	module_put(vc->vc_sw->owner);
 }
 
+static void vc_port_destruct(struct tty_port *port)
+{
+	struct vc_data *vc = container_of(port, struct vc_data, port);
+
+	kfree(vc);
+}
+
+static const struct tty_port_operations vc_port_ops = {
+	.destruct = vc_port_destruct,
+};
+
 int vc_allocate(unsigned int currcons)	/* return 0 on success */
 {
 	struct vt_notifier_param param;
@@ -1091,6 +1102,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 
 	vc_cons[currcons].d = vc;
 	tty_port_init(&vc->port);
+	vc->port.ops = &vc_port_ops;
 	INIT_WORK(&vc_cons[currcons].SAK_work, vc_SAK);
 
 	visual_init(vc, currcons, 1);
@@ -3219,6 +3231,7 @@ static int con_install(struct tty_driver *driver, struct tty_struct *tty)
 
 	tty->driver_data = vc;
 	vc->port.tty = tty;
+	tty_port_get(&vc->port);
 
 	if (!tty->winsize.ws_row && !tty->winsize.ws_col) {
 		tty->winsize.ws_row = vc_cons[currcons].d->vc_rows;
@@ -3252,6 +3265,13 @@ static void con_shutdown(struct tty_struct *tty)
 	console_lock();
 	vc->port.tty = NULL;
 	console_unlock();
+}
+
+static void con_cleanup(struct tty_struct *tty)
+{
+	struct vc_data *vc = tty->driver_data;
+
+	tty_port_put(&vc->port);
 }
 
 static int default_color           = 7; /* white */
@@ -3378,7 +3398,8 @@ static const struct tty_operations con_ops = {
 	.throttle = con_throttle,
 	.unthrottle = con_unthrottle,
 	.resize = vt_resize,
-	.shutdown = con_shutdown
+	.shutdown = con_shutdown,
+	.cleanup = con_cleanup,
 };
 
 static struct cdev vc0_cdev;
@@ -4409,16 +4430,8 @@ static int con_font_get(struct vc_data *vc, struct console_font_op *op)
 
 	if (op->data && font.charcount > op->charcount)
 		rc = -ENOSPC;
-	if (!(op->flags & KD_FONT_FLAG_OLD)) {
-		if (font.width > op->width || font.height > op->height) 
-			rc = -ENOSPC;
-	} else {
-		if (font.width != 8)
-			rc = -EIO;
-		else if ((op->height && font.height > op->height) ||
-			 font.height > 32)
-			rc = -ENOSPC;
-	}
+	if (font.width > op->width || font.height > op->height)
+		rc = -ENOSPC;
 	if (rc)
 		goto out;
 
@@ -4446,7 +4459,7 @@ static int con_font_set(struct vc_data *vc, struct console_font_op *op)
 		return -EINVAL;
 	if (op->charcount > 512)
 		return -EINVAL;
-	if (op->width <= 0 || op->width > 32 || op->height > 32)
+	if (op->width <= 0 || op->width > 32 || !op->height || op->height > 32)
 		return -EINVAL;
 	size = (op->width+7)/8 * 32 * op->charcount;
 	if (size > max_font_size)
@@ -4455,31 +4468,6 @@ static int con_font_set(struct vc_data *vc, struct console_font_op *op)
 	font.data = memdup_user(op->data, size);
 	if (IS_ERR(font.data))
 		return PTR_ERR(font.data);
-
-	if (!op->height) {		/* Need to guess font height [compat] */
-		int h, i;
-		u8 *charmap = font.data;
-
-		/*
-		 * If from KDFONTOP ioctl, don't allow things which can be done
-		 * in userland,so that we can get rid of this soon
-		 */
-		if (!(op->flags & KD_FONT_FLAG_OLD)) {
-			kfree(font.data);
-			return -EINVAL;
-		}
-
-		for (h = 32; h > 0; h--)
-			for (i = 0; i < op->charcount; i++)
-				if (charmap[32*i+h-1])
-					goto nonzero;
-
-		kfree(font.data);
-		return -EINVAL;
-
-	nonzero:
-		op->height = h;
-	}
 
 	font.charcount = op->charcount;
 	font.width = op->width;
@@ -4529,27 +4517,6 @@ static int con_font_default(struct vc_data *vc, struct console_font_op *op)
 	return rc;
 }
 
-static int con_font_copy(struct vc_data *vc, struct console_font_op *op)
-{
-	int con = op->height;
-	int rc;
-
-
-	console_lock();
-	if (vc->vc_mode != KD_TEXT)
-		rc = -EINVAL;
-	else if (!vc->vc_sw->con_font_copy)
-		rc = -ENOSYS;
-	else if (con < 0 || !vc_cons_allocated(con))
-		rc = -ENOTTY;
-	else if (con == vc->vc_num)	/* nothing to do */
-		rc = 0;
-	else
-		rc = vc->vc_sw->con_font_copy(vc, con);
-	console_unlock();
-	return rc;
-}
-
 int con_font_op(struct vc_data *vc, struct console_font_op *op)
 {
 	switch (op->op) {
@@ -4560,7 +4527,8 @@ int con_font_op(struct vc_data *vc, struct console_font_op *op)
 	case KD_FONT_OP_SET_DEFAULT:
 		return con_font_default(vc, op);
 	case KD_FONT_OP_COPY:
-		return con_font_copy(vc, op);
+		/* was buggy and never really used */
+		return -EINVAL;
 	}
 	return -ENOSYS;
 }

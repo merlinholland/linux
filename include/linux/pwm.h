@@ -58,6 +58,8 @@ enum {
 struct pwm_state {
 	unsigned int period;
 	unsigned int duty_cycle;
+	unsigned int duty_cycle1;
+	unsigned int duty_cycle2;
 	enum pwm_polarity polarity;
 	bool enabled;
 };

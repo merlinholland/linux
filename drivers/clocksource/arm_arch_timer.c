@@ -628,7 +628,8 @@ static bool arch_timer_this_cpu_has_cntvct_wa(void)
 #define erratum_set_next_event_tval_virt(...)		({BUG(); 0;})
 #define erratum_set_next_event_tval_phys(...)		({BUG(); 0;})
 #define erratum_handler(fn, r, ...)			({false;})
-#define arch_timer_this_cpu_has_cntvct_wa()		({false;})
+#define arch_timer_this_cpu_has_cntvct_wa()		\
+	({IS_ENABLED(CONFIG_ARM_ARCH_TIMER_VCT_ACCESS) ? false : true;})
 #endif /* CONFIG_ARM_ARCH_TIMER_OOL_WORKAROUND */
 
 static __always_inline irqreturn_t timer_handler(const int access,

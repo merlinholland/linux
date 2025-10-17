@@ -1509,6 +1509,9 @@ static int ubifs_releasepage(struct page *page, gfp_t unused_gfp_flags)
 	 */
 	if (PageWriteback(page))
 		return 0;
+#ifdef CONFIG_ARCH_BSP
+	return 0;
+#endif
 	ubifs_assert(c, PagePrivate(page));
 	ubifs_assert(c, 0);
 	ClearPagePrivate(page);

@@ -366,7 +366,7 @@ static int pl011_fifo_to_tty(struct uart_amba_port *uap)
  */
 #ifdef CONFIG_DMA_ENGINE
 
-#define PL011_DMA_BUFFER_SIZE PAGE_SIZE
+#define PL011_DMA_BUFFER_SIZE (PAGE_SIZE * 4)
 
 static int pl011_sgbuf_init(struct dma_chan *chan, struct pl011_sgbuf *sg,
 	enum dma_data_direction dir)

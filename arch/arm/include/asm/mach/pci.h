@@ -12,6 +12,7 @@
 #define __ASM_MACH_PCI_H
 
 #include <linux/ioport.h>
+#include <linux/msi.h>
 
 struct pci_sys_data;
 struct pci_ops;
@@ -19,7 +20,25 @@ struct pci_bus;
 struct pci_host_bridge;
 struct device;
 
+#ifdef CONFIG_PCI_MSI
+#define BSP_PCI_MSI_NR (8 * 32)
+struct bsp_msi {
+	struct msi_controller chip;
+	DECLARE_BITMAP(used, BSP_PCI_MSI_NR);
+	struct irq_domain *domain;
+	unsigned long pages;
+	struct mutex lock;
+	int irq;
+};
+#endif
 struct hw_pci {
+#ifdef CONFIG_PCI_DOMAINS
+	int     domain;
+#endif
+#ifdef CONFIG_PCI_MSI
+	struct bsp_msi msi;
+#endif
+	struct device *dev;
 	struct msi_controller *msi_ctrl;
 	struct pci_ops	*ops;
 	int		nr_controllers;
@@ -36,12 +55,17 @@ struct hw_pci {
 					  resource_size_t start,
 					  resource_size_t size,
 					  resource_size_t align);
+	void        (*add_bus)(struct pci_bus *bus);
+	void        (*remove_bus)(struct pci_bus *bus);
 };
 
 /*
  * Per-controller structure
  */
 struct pci_sys_data {
+#ifdef CONFIG_PCI_DOMAINS
+	int     domain;
+#endif
 	struct list_head node;
 	int		busnr;		/* primary bus number			*/
 	u64		mem_offset;	/* bus->cpu memory mapping offset	*/

@@ -1402,7 +1402,9 @@ static int mmc_select_hs400es(struct mmc_card *card)
 
 	/* Set host controller to HS400 timing and frequency */
 	mmc_set_timing(host, MMC_TIMING_MMC_HS400);
-
+#if defined(CONFIG_MMC_SDHCI_BSP) || (defined(MODULE) && defined(CONFIG_MMC_SDHCI_BSP_MODULE))
+	mmc_set_bus_speed(card);
+#endif
 	/* Controller enable enhanced strobe function */
 	host->ios.enhanced_strobe = true;
 	if (host->ops->hs400_enhanced_strobe)
@@ -1500,7 +1502,8 @@ static int mmc_select_timing(struct mmc_card *card)
 	if (!mmc_can_ext_csd(card))
 		goto bus_speed;
 
-	if (card->mmc_avail_type & EXT_CSD_CARD_TYPE_HS400ES)
+	if (card->mmc_avail_type & EXT_CSD_CARD_TYPE_HS400ES &&
+	    card->host->caps & MMC_CAP_8_BIT_DATA)
 		err = mmc_select_hs400es(card);
 	else if (card->mmc_avail_type & EXT_CSD_CARD_TYPE_HS200)
 		err = mmc_select_hs200(card);
@@ -2204,6 +2207,7 @@ int mmc_attach_mmc(struct mmc_host *host)
 	if (err)
 		return err;
 
+	host->type = MMC_HOST_TYPE_MMC;
 	mmc_attach_bus(host, &mmc_ops);
 	if (host->ocr_avail_mmc)
 		host->ocr_avail = host->ocr_avail_mmc;

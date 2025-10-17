@@ -620,6 +620,15 @@ rename:
 		goto err_free_name;
 	}
 
+#ifdef CONFIG_IOMMU_SVA
+	dev->iommu_param = kzalloc(sizeof(*dev->iommu_param), GFP_KERNEL);
+	if (!dev->iommu_param) {
+		ret = -ENOMEM;
+		goto err_free_name;
+	}
+	mutex_init(&dev->iommu_param->lock);
+#endif
+
 	kobject_get(group->devices_kobj);
 
 	dev->iommu_group = group;
@@ -650,6 +659,9 @@ err_put_group:
 	mutex_unlock(&group->mutex);
 	dev->iommu_group = NULL;
 	kobject_put(group->devices_kobj);
+#ifdef CONFIG_IOMMU_SVA
+	kfree(dev->iommu_param);
+#endif
 err_free_name:
 	kfree(device->name);
 err_remove_link:
@@ -696,7 +708,9 @@ void iommu_group_remove_device(struct device *dev)
 	sysfs_remove_link(&dev->kobj, "iommu_group");
 
 	trace_remove_device_from_group(group->id, dev);
-
+#ifdef CONFIG_IOMMU_SVA
+	kfree(dev->iommu_param);
+#endif
 	kfree(device->name);
 	kfree(device);
 	dev->iommu_group = NULL;
@@ -829,6 +843,198 @@ int iommu_group_unregister_notifier(struct iommu_group *group,
 	return blocking_notifier_chain_unregister(&group->notifier, nb);
 }
 EXPORT_SYMBOL_GPL(iommu_group_unregister_notifier);
+
+#ifdef CONFIG_IOMMU_SVA
+/* Max time to wait for a pending page request */
+#define IOMMU_PAGE_RESPONSE_MAXTIME (HZ * 10)
+static void iommu_dev_fault_timer_fn(struct timer_list *t)
+{
+	struct iommu_fault_param *fparam = from_timer(fparam, t, timer);
+	struct iommu_fault_event *evt, *iter;
+
+	u64 now;
+
+	now = get_jiffies_64();
+
+	/* The goal is to ensure driver or guest page fault handler(via vfio)
+	 * send page response on time. Otherwise, limited queue resources
+	 * may be occupied by some irresponsive guests or drivers.
+	 * When per device pending fault list is not empty, we periodically checks
+	 * if any anticipated page response time has expired.
+	 *
+	 * TODO:
+	 * We could do the following if response time expires:
+	 * 1. send page response code FAILURE to all pending PRQ
+	 * 2. inform device driver or vfio
+	 * 3. drain in-flight page requests and responses for this device
+	 * 4. clear pending fault list such that driver can unregister fault
+	 *    handler(otherwise blocked when pending faults are present).
+	 */
+	list_for_each_entry_safe(evt, iter, &fparam->faults, list) {
+		if (time_after64(evt->expire, now))
+			pr_err("Page response time expired!, pasid %d gid %d exp %llu now %llu\n",
+				evt->pasid, evt->page_req_group_id, evt->expire, now);
+	}
+	mod_timer(t, now + IOMMU_PAGE_RESPONSE_MAXTIME);
+}
+
+/**
+ * iommu_register_device_fault_handler() - Register a device fault handler
+ * @dev: the device
+ * @handler: the fault handler
+ * @data: private data passed as argument to the handler
+ *
+ * When an IOMMU fault event is received, call this handler with the fault event
+ * and data as argument. The handler should return 0 on success. If the fault is
+ * recoverable (IOMMU_FAULT_PAGE_REQ), the handler can also complete
+ * the fault by calling iommu_page_response() with one of the following
+ * response code:
+ * - IOMMU_PAGE_RESP_SUCCESS: retry the translation
+ * - IOMMU_PAGE_RESP_INVALID: terminate the fault
+ * - IOMMU_PAGE_RESP_FAILURE: terminate the fault and stop reporting
+ *   page faults if possible.
+ *
+ * Return 0 if the fault handler was installed successfully, or an error.
+ */
+int iommu_register_device_fault_handler(struct device *dev,
+					iommu_dev_fault_handler_t handler,
+					void *data)
+{
+	struct iommu_param *param = dev->iommu_param;
+
+	/*
+	 * Device iommu_param should have been allocated when device is
+	 * added to its iommu_group.
+	 */
+	if (!param)
+		return -EINVAL;
+
+	/* Only allow one fault handler registered for each device */
+	if (param->fault_param)
+		return -EBUSY;
+
+	mutex_lock(&param->lock);
+	get_device(dev);
+	param->fault_param =
+		kzalloc(sizeof(struct iommu_fault_param), GFP_ATOMIC);
+	if (!param->fault_param) {
+		put_device(dev);
+		mutex_unlock(&param->lock);
+		return -ENOMEM;
+	}
+	mutex_init(&param->fault_param->lock);
+	param->fault_param->handler = handler;
+	param->fault_param->data = data;
+	INIT_LIST_HEAD(&param->fault_param->faults);
+
+	timer_setup(&param->fault_param->timer, iommu_dev_fault_timer_fn,
+		TIMER_DEFERRABLE);
+
+	mutex_unlock(&param->lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(iommu_register_device_fault_handler);
+
+/**
+ * iommu_unregister_device_fault_handler() - Unregister the device fault handler
+ * @dev: the device
+ *
+ * Remove the device fault handler installed with
+ * iommu_register_device_fault_handler().
+ *
+ * Return 0 on success, or an error.
+ */
+int iommu_unregister_device_fault_handler(struct device *dev)
+{
+	struct iommu_param *param = dev->iommu_param;
+	int ret = 0;
+
+	if (!param)
+		return -EINVAL;
+
+	mutex_lock(&param->lock);
+	/* we cannot unregister handler if there are pending faults */
+	if (list_empty(&param->fault_param->faults)) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+
+	list_del(&param->fault_param->faults);
+	kfree(param->fault_param);
+	param->fault_param = NULL;
+	put_device(dev);
+
+unlock:
+	mutex_unlock(&param->lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(iommu_unregister_device_fault_handler);
+
+
+/**
+ * iommu_report_device_fault() - Report fault event to device
+ * @dev: the device
+ * @evt: fault event data
+ *
+ * Called by IOMMU model specific drivers when fault is detected, typically
+ * in a threaded IRQ handler.
+ *
+ * Return 0 on success, or an error.
+ */
+int iommu_report_device_fault(struct device *dev, struct iommu_fault_event *evt)
+{
+	int ret = 0;
+	struct iommu_fault_event *evt_pending;
+	struct timer_list *tmr;
+	u64 exp;
+	struct iommu_fault_param *fparam;
+
+	/* iommu_param is allocated when device is added to group */
+	if (!dev->iommu_param | !evt)
+		return -EINVAL;
+	/* we only report device fault if there is a handler registered */
+	mutex_lock(&dev->iommu_param->lock);
+	if (!dev->iommu_param->fault_param ||
+		!dev->iommu_param->fault_param->handler) {
+		ret = -EINVAL;
+		goto done_unlock;
+	}
+	fparam = dev->iommu_param->fault_param;
+	if (evt->type == IOMMU_FAULT_PAGE_REQ && evt->last_req) {
+		evt_pending = kzalloc(sizeof(*evt_pending), GFP_ATOMIC);
+		if (!evt_pending) {
+			ret = -ENOMEM;
+			goto done_unlock;
+		}
+		memcpy(evt_pending, evt, sizeof(struct iommu_fault_event));
+		/* Keep track of response expiration time */
+		exp = get_jiffies_64() + IOMMU_PAGE_RESPONSE_MAXTIME;
+		evt_pending->expire = exp;
+
+		if (list_empty(&fparam->faults)) {
+			/* First pending event, start timer */
+			tmr = &dev->iommu_param->fault_param->timer;
+			// not call WARN_ON(timer_pending(tmr))
+			mod_timer(tmr, exp);
+		}
+
+		mutex_lock(&fparam->lock);
+		list_add_tail(&evt_pending->list, &fparam->faults);
+		mutex_unlock(&fparam->lock);
+	}
+	ret = fparam->handler(evt, fparam->data);
+	if (evt->type != IOMMU_FAULT_PAGE_REQ) {
+		pr_warn("receive device fault : type = %d, reason = %d, addr = 0x%llx\n", evt->type, evt->reason, evt->addr);
+		trace_dev_fault(dev, evt);
+	}
+done_unlock:
+	mutex_unlock(&dev->iommu_param->lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(iommu_report_device_fault);
+#endif
 
 /**
  * iommu_group_id - Return ID for a group
@@ -1303,7 +1509,9 @@ static struct iommu_domain *__iommu_domain_alloc(struct bus_type *bus,
 	domain->type = type;
 	/* Assume all sizes by default; the driver may override this later */
 	domain->pgsize_bitmap  = bus->iommu_ops->pgsize_bitmap;
-
+#ifdef CONFIG_IOMMU_SVA
+	INIT_LIST_HEAD(&domain->mm_list);
+#endif
 	return domain;
 }
 
@@ -1363,6 +1571,95 @@ out_unlock:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(iommu_attach_device);
+
+#ifdef CONFIG_IOMMU_SVA
+int iommu_bind_pasid_table(struct iommu_domain *domain, struct device *dev,
+			struct pasid_table_config *pasidt_binfo)
+{
+	if (unlikely(!domain->ops->bind_pasid_table))
+		return -ENODEV;
+
+	return domain->ops->bind_pasid_table(domain, dev, pasidt_binfo);
+}
+EXPORT_SYMBOL_GPL(iommu_bind_pasid_table);
+
+void iommu_unbind_pasid_table(struct iommu_domain *domain, struct device *dev)
+{
+	if (unlikely(!domain->ops->unbind_pasid_table))
+		return;
+
+	domain->ops->unbind_pasid_table(domain, dev);
+}
+EXPORT_SYMBOL_GPL(iommu_unbind_pasid_table);
+
+int iommu_sva_invalidate(struct iommu_domain *domain,
+		struct device *dev, struct tlb_invalidate_info *inv_info)
+{
+	int ret = 0;
+
+	if (unlikely(!domain->ops->sva_invalidate))
+		return -ENODEV;
+
+	ret = domain->ops->sva_invalidate(domain, dev, inv_info);
+	trace_sva_invalidate(dev, inv_info);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(iommu_sva_invalidate);
+
+int iommu_page_response(struct device *dev,
+			struct page_response_msg *msg)
+{
+	struct iommu_param *param = dev->iommu_param;
+	int ret = -EINVAL;
+	struct iommu_fault_event *evt, *iter;
+	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
+
+	if (!domain || !domain->ops->page_response)
+		return -ENODEV;
+
+	/*
+	 * Device iommu_param should have been allocated when device is
+	 * added to its iommu_group.
+	 */
+	if (!param || !param->fault_param)
+		return -EINVAL;
+
+	/* Only send response if there is a fault report pending */
+	mutex_lock(&param->fault_param->lock);
+	if (list_empty(&param->fault_param->faults)) {
+		pr_warn("no pending PRQ, drop response\n");
+		goto done_unlock;
+	}
+	/*
+	 * Check if we have a matching page request pending to respond,
+	 * otherwise return -EINVAL
+	 */
+	list_for_each_entry_safe(evt, iter, &param->fault_param->faults, list) {
+		if (evt->pasid == msg->pasid &&
+		    msg->page_req_group_id == evt->page_req_group_id) {
+			msg->private_data = evt->iommu_private;
+			trace_dev_page_response(dev, msg);
+			ret = domain->ops->page_response(dev, msg);
+			list_del(&evt->list);
+			kfree(evt);
+			break;
+		}
+	}
+
+	/* stop response timer if no more pending request */
+	if (list_empty(&param->fault_param->faults) &&
+		timer_pending(&param->fault_param->timer)) {
+		pr_debug("no pending PRQ, stop timer\n");
+		del_timer(&param->fault_param->timer);
+	}
+
+done_unlock:
+	mutex_unlock(&param->fault_param->lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(iommu_page_response);
+#endif
 
 static void __iommu_detach_device(struct iommu_domain *domain,
 				  struct device *dev)
@@ -2016,3 +2313,88 @@ int iommu_fwspec_add_ids(struct device *dev, u32 *ids, int num_ids)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(iommu_fwspec_add_ids);
+
+#ifdef CONFIG_IOMMU_SVA
+/**
+ * iommu_sva_bind_device() - Bind a process address space to a device
+ * @dev: the device
+ * @mm: the mm to bind, caller must hold a reference to it
+ * @pasid: valid address where the PASID will be stored
+ * @flags: bond properties
+ * @drvdata: private data passed to the mm exit handler
+ *
+ * Create a bond between device and task, allowing the device to access the mm
+ * using the returned PASID. If unbind() isn't called first, a subsequent bind()
+ * for the same device and mm fails with -EEXIST.
+ *
+ * iommu_sva_device_init() must be called first, to initialize the required SVA
+ * features. @flags is a subset of these features.
+ *
+ * If IOMMU_SVA_FEAT_IOPF isn't requested, the caller must pin down using
+ * get_user_pages*() all mappings shared with the device. mlock() isn't
+ * sufficient, as it doesn't prevent minor page faults (e.g. copy-on-write).
+ *
+ * On success, 0 is returned and @pasid contains a valid ID. Otherwise, an error
+ * is returned.
+ */
+int iommu_sva_bind_device(struct device *dev, struct mm_struct *mm, int *pasid,
+			  unsigned long flags, void *drvdata)
+{
+	int ret = -EINVAL;
+	struct iommu_group *group;
+
+	if (!pasid)
+		return -EINVAL;
+
+	group = iommu_group_get(dev);
+	if (!group)
+		return -ENODEV;
+
+	/* Ensure device count and domain don't change while we're binding */
+	mutex_lock(&group->mutex);
+	if (iommu_group_device_count(group) != 1)
+		goto out_unlock;
+
+	ret = __iommu_sva_bind_device(dev, mm, pasid, flags, drvdata);
+
+out_unlock:
+	mutex_unlock(&group->mutex);
+	iommu_group_put(group);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(iommu_sva_bind_device);
+
+/**
+ * iommu_sva_unbind_device() - Remove a bond created with iommu_sva_bind_device
+ * @dev: the device
+ * @pasid: the pasid returned by bind()
+ *
+ * Remove bond between device and address space identified by @pasid. Users
+ * should not call unbind() if the corresponding mm exited (as the PASID might
+ * have been reallocated for another process).
+ *
+ * The device must not be issuing any more transaction for this PASID. All
+ * outstanding page requests for this PASID must have been flushed to the IOMMU.
+ *
+ * Returns 0 on success, or an error value
+ */
+int iommu_sva_unbind_device(struct device *dev, int pasid)
+{
+	int ret = -EINVAL;
+	struct iommu_group *group;
+
+	group = iommu_group_get(dev);
+	if (!group)
+		return -ENODEV;
+
+	mutex_lock(&group->mutex);
+	ret = __iommu_sva_unbind_device(dev, pasid);
+	mutex_unlock(&group->mutex);
+
+	iommu_group_put(group);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(iommu_sva_unbind_device);
+#endif

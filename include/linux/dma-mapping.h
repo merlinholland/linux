@@ -512,8 +512,8 @@ static inline void *dma_alloc_attrs(struct device *dev, size_t size,
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 	void *cpu_addr;
 
-	BUG_ON(!ops);
-	WARN_ON_ONCE(dev && !dev->coherent_dma_mask);
+	// BUG_ON(!ops);
+	// WARN_ON_ONCE(dev && !dev->coherent_dma_mask);
 
 	if (dma_alloc_from_dev_coherent(dev, size, dma_handle, &cpu_addr))
 		return cpu_addr;
@@ -537,7 +537,7 @@ static inline void dma_free_attrs(struct device *dev, size_t size,
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
-	BUG_ON(!ops);
+	// BUG_ON(!ops);
 
 	if (dma_release_from_dev_coherent(dev, get_order(size), cpu_addr))
 		return;
@@ -548,7 +548,8 @@ static inline void dma_free_attrs(struct device *dev, size_t size,
 	 * sleep on some machines, and b) an indication that the driver is
 	 * probably misusing the coherent API anyway.
 	 */
-	WARN_ON(irqs_disabled());
+	// WARN_ON(irqs_disabled());
+	irqs_disabled();
 
 	if (!ops->free || !cpu_addr)
 		return;

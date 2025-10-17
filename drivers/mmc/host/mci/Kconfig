@@ -1,0 +1,22 @@
+#
+#  mci family SD/MMC device configuration
+#
+menuconfig MCI
+	tristate "mci driver support"
+	depends on ARCH_SS812V100 || ARCH_SS813V100 || ARCH_SS312V100 || ARCH_SS313V100 || ARCH_SS011V100 || ARCH_SS012V100
+	select MMC_UNSAFE_RESUME
+	select MMC_EMBEDDED_SDIO
+	select MMC_BLOCK
+	select MMC_BLOCK_BOUNCE
+	help
+	  This selects the Vendor Synopsys MultiMedia Card Driver
+	  support. If you want use SD/MMC/SDIO driver,
+	  Say Y or M here.
+
+	  default is Y.
+
+config SEND_AUTO_STOP
+	bool "Send Auto Stop to terminate data transfer between host and SD card"
+	depends on MCI
+	default y
+

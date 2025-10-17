@@ -181,10 +181,18 @@ static const struct nand_manufacturer nand_manufacturers[] = {
 	{NAND_MFR_AMD, "AMD/Spansion", &amd_nand_manuf_ops},
 	{NAND_MFR_MACRONIX, "Macronix", &macronix_nand_manuf_ops},
 	{NAND_MFR_EON, "Eon"},
+	{NAND_MFR_WINBOND,	"Winbond"},
+	{NAND_MFR_ATO,		"ATO"},
+	{NAND_MFR_MXIC,		"MXIC"},
+	{NAND_MFR_ALL_FLASH,	"All-flash"},
+	{NAND_MFR_PARAGON,	"Paragon"},
 	{NAND_MFR_SANDISK, "SanDisk"},
 	{NAND_MFR_INTEL, "Intel"},
 	{NAND_MFR_ATO, "ATO"},
-	{NAND_MFR_WINBOND, "Winbond"},
+	{NAND_MFR_HEYANGTEK, "HeYangTek"},
+	{NAND_MFR_DOSILICON, "Dosilicon"},
+	{NAND_MFR_FIDELIX, "Fidelix/Dosi"}, /* Fidelix was purchased by Dosilicon */
+	{0x0, "Unknown"}
 };
 
 /**

@@ -16,13 +16,29 @@
 
 OBJCOPYFLAGS_Image :=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 
-targets := Image Image.gz
+targets := Image Image.gz uImage
+
+dtstree := $(srctree)/$(src)/dts
+
+dtb-$(CONFIG_OF_ALL_DTBS) := $(patsubst $(dtstree)/%.dts,%.dtb, $(foreach d,$(dts-dirs), $(wildcard $(dtstree)/$(d)/*.dts)))
+
+DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES))
+ifneq ($(DTB_NAMES),)
+DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
+else
+DTB_LIST := $(dtb-y)
+endif
+
+DTB_OBJS := $(addprefix $(obj)/dts/,$(DTB_LIST))
 
 $(obj)/Image: vmlinux FORCE
 	$(call if_changed,objcopy)
 
 $(obj)/Image.bz2: $(obj)/Image FORCE
 	$(call if_changed,bzip2)
+
+$(obj)/Image-dtb: $(obj)/Image $(DTB_OBJS) FORCE
+	$(call if_changed,cat)
 
 $(obj)/Image.gz: $(obj)/Image FORCE
 	$(call if_changed,gzip)
@@ -36,10 +52,35 @@ $(obj)/Image.lzma: $(obj)/Image FORCE
 $(obj)/Image.lzo: $(obj)/Image FORCE
 	$(call if_changed,lzo)
 
-install:
+$(obj)/Image.gz-dtb: $(obj)/Image.gz $(DTB_OBJS) FORCE
+	$(call if_changed,cat)
+
+UIMAGE_LOADADDR=$(TEXT_OFFSET)
+UIMAGE_ENTRYADDR=$(TEXT_OFFSET)
+#UIMAGE_COMPRESSION = gzip
+check_for_multiple_loadaddr = \
+if [ $(words $(UIMAGE_LOADADDR)) -ne 1 ]; then \
+	echo 'multiple (or no) load addresses: $(UIMAGE_LOADADDR)'; \
+	echo 'This is incompatible with uImages'; \
+	echo 'Specify LOADADDR on the commandline to build an uImage'; \
+	false; \
+fi
+
+rm_uimage:
+	@rm -f $(obj)/uImage
+
+$(obj)/uImage: $(obj)/Image rm_uimage FORCE
+	@$(check_for_multiple_loadaddr)
+	@dd if=$< of=$<.dd ibs=4096 conv=sync && mv $<.dd $<
+	$(call if_changed,uimage)
+	$(if $(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE),@$(kecho) '  CAT   $(DTB_OBJS) to $@')
+	$(if $(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE),@cat $(DTB_OBJS) >>$@,)
+	@$(kecho) '  Image $@ is ready'
+
+install:$(obj)/uImage
 	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \
 	$(obj)/Image System.map "$(INSTALL_PATH)"
 
-zinstall:
+zinstall:$(obj)/uImage
 	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \
 	$(obj)/Image.gz System.map "$(INSTALL_PATH)"

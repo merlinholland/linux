@@ -29,9 +29,15 @@
 #define JFFS2_DYNRUBIN_PRIORITY  20
 #define JFFS2_LZARI_PRIORITY     30
 #define JFFS2_RTIME_PRIORITY     50
+
+#ifdef CONFIG_BSP_MC
+#define JFFS2_LZMA_PRIORITY      70
+#define JFFS2_ZLIB_PRIORITY      80
+#define JFFS2_LZO_PRIORITY       90
+#else
 #define JFFS2_ZLIB_PRIORITY      60
 #define JFFS2_LZO_PRIORITY       80
-
+#endif
 
 #define JFFS2_RUBINMIPS_DISABLED /* RUBINs will be used only */
 #define JFFS2_DYNRUBIN_DISABLED  /*	   for decompression */

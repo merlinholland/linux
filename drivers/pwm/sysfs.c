@@ -111,6 +111,80 @@ static ssize_t duty_cycle_store(struct device *child,
 	return ret ? : size;
 }
 
+#if (defined(CONFIG_ARCH_SS928V100) || defined(CONFIG_ARCH_SS927V100))
+
+static ssize_t duty_cycle1_show(struct device *child,
+			       struct device_attribute *attr,
+			       char *buf)
+{
+	const struct pwm_device *pwm = child_to_pwm_device(child);
+	struct pwm_state state;
+
+	pwm_get_state(pwm, &state);
+
+	return sprintf(buf, "%u\n", state.duty_cycle1);
+}
+
+static ssize_t duty_cycle1_store(struct device *child,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct pwm_export *export = child_to_pwm_export(child);
+	struct pwm_device *pwm = export->pwm;
+	struct pwm_state state;
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	mutex_lock(&export->lock);
+	pwm_get_state(pwm, &state);
+	state.duty_cycle1 = val;
+	ret = pwm_apply_state(pwm, &state);
+	mutex_unlock(&export->lock);
+
+	return ret ? : size;
+}
+
+static ssize_t duty_cycle2_show(struct device *child,
+			       struct device_attribute *attr,
+			       char *buf)
+{
+	const struct pwm_device *pwm = child_to_pwm_device(child);
+	struct pwm_state state;
+
+	pwm_get_state(pwm, &state);
+
+	return sprintf(buf, "%u\n", state.duty_cycle2);
+}
+
+static ssize_t duty_cycle2_store(struct device *child,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct pwm_export *export = child_to_pwm_export(child);
+	struct pwm_device *pwm = export->pwm;
+	struct pwm_state state;
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	mutex_lock(&export->lock);
+	pwm_get_state(pwm, &state);
+	state.duty_cycle2 = val;
+	ret = pwm_apply_state(pwm, &state);
+	mutex_unlock(&export->lock);
+
+	return ret ? : size;
+}
+
+#endif
+
 static ssize_t enable_show(struct device *child,
 			   struct device_attribute *attr,
 			   char *buf)
@@ -239,6 +313,31 @@ static struct attribute *pwm_attrs[] = {
 };
 ATTRIBUTE_GROUPS(pwm);
 
+#if (defined(CONFIG_ARCH_SS928V100) || defined(CONFIG_ARCH_SS927V100))
+
+#define PWM_BASE_0  0
+#define PWM_BASE_16 16
+
+#define PWM_COMPLEMENTARY_CHN_0  0
+#define PWM_COMPLEMENTARY_CHN_1  1
+#define PWM_COMPLEMENTARY_CHN_15 15
+
+static DEVICE_ATTR_RW(duty_cycle1);
+static DEVICE_ATTR_RW(duty_cycle2);
+static struct attribute *pwm_pn_attrs[] = {
+	&dev_attr_period.attr,
+	&dev_attr_duty_cycle.attr,
+	&dev_attr_duty_cycle1.attr,
+	&dev_attr_duty_cycle2.attr,
+	&dev_attr_enable.attr,
+	&dev_attr_polarity.attr,
+	&dev_attr_capture.attr,
+	NULL
+};
+ATTRIBUTE_GROUPS(pwm_pn);
+
+#endif
+
 static void pwm_export_release(struct device *child)
 {
 	struct pwm_export *export = child_to_pwm_export(child);
@@ -248,6 +347,9 @@ static void pwm_export_release(struct device *child)
 
 static int pwm_export_child(struct device *parent, struct pwm_device *pwm)
 {
+#if (defined(CONFIG_ARCH_SS928V100) || defined(CONFIG_ARCH_SS927V100))
+	struct pwm_chip *chip = dev_get_drvdata(parent);
+#endif
 	struct pwm_export *export;
 	int ret;
 
@@ -266,7 +368,17 @@ static int pwm_export_child(struct device *parent, struct pwm_device *pwm)
 	export->child.release = pwm_export_release;
 	export->child.parent = parent;
 	export->child.devt = MKDEV(0, 0);
-	export->child.groups = pwm_groups;
+#if (defined(CONFIG_ARCH_SS928V100) || defined(CONFIG_ARCH_SS927V100))
+	if (((chip->base == PWM_BASE_0) && (pwm->hwpwm == PWM_COMPLEMENTARY_CHN_15)) ||
+	    ((chip->base == PWM_BASE_16) && ((pwm->hwpwm == PWM_COMPLEMENTARY_CHN_0) ||
+		(pwm->hwpwm == PWM_COMPLEMENTARY_CHN_1)))) {
+	    export->child.groups = pwm_pn_groups;
+	} else {
+#endif
+	    export->child.groups = pwm_groups;
+#if (defined(CONFIG_ARCH_SS928V100) || defined(CONFIG_ARCH_SS927V100))
+	}
+#endif
 	dev_set_name(&export->child, "pwm%u", pwm->hwpwm);
 
 	ret = device_register(&export->child);

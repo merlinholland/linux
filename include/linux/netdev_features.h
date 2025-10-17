@@ -35,6 +35,7 @@ enum {
 	NETIF_F_GRO_BIT,		/* Generic receive offload */
 	NETIF_F_LRO_BIT,		/* large receive offload */
 
+	NETIF_F_UFO_BIT,		/* UDPv4 fragmentation */
 	/**/NETIF_F_GSO_SHIFT,		/* keep the order of SKB_GSO_* bits */
 	NETIF_F_TSO_BIT			/* ... TCPv4 segmentation */
 		= NETIF_F_GSO_SHIFT,
@@ -128,6 +129,7 @@ enum {
 #define NETIF_F_TSO6		__NETIF_F(TSO6)
 #define NETIF_F_TSO_ECN		__NETIF_F(TSO_ECN)
 #define NETIF_F_TSO		__NETIF_F(TSO)
+#define NETIF_F_UFO		__NETIF_F(UFO)
 #define NETIF_F_VLAN_CHALLENGED	__NETIF_F(VLAN_CHALLENGED)
 #define NETIF_F_RXFCS		__NETIF_F(RXFCS)
 #define NETIF_F_RXALL		__NETIF_F(RXALL)
@@ -205,7 +207,7 @@ static inline int find_next_netdev_feature(u64 feature, unsigned long start)
 				 NETIF_F_FSO)
 
 /* List of features with software fallbacks. */
-#define NETIF_F_GSO_SOFTWARE	(NETIF_F_ALL_TSO | \
+#define NETIF_F_GSO_SOFTWARE	(NETIF_F_ALL_TSO | NETIF_F_UFO | \
 				 NETIF_F_GSO_SCTP)
 
 /*

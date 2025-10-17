@@ -511,6 +511,12 @@ do {									\
 #endif /* !CONFIG_CPU_SPECTRE */
 
 #ifdef CONFIG_MMU
+#ifdef CONFIG_VDMA_V100
+extern unsigned long bsp_copy_from_user(void *to,
+				const void __user *from, unsigned long n);
+extern unsigned long bsp_copy_to_user(void *to,
+				const void __user *from, unsigned long n);
+#endif
 extern unsigned long __must_check
 arm_copy_from_user(void *to, const void __user *from, unsigned long n);
 
@@ -520,7 +526,11 @@ raw_copy_from_user(void *to, const void __user *from, unsigned long n)
 	unsigned int __ua_flags;
 
 	__ua_flags = uaccess_save_and_enable();
+#ifdef CONFIG_VDMA_V100
+	n = bsp_copy_from_user(to, from, n);
+#else
 	n = arm_copy_from_user(to, from, n);
+#endif
 	uaccess_restore(__ua_flags);
 	return n;
 }
@@ -536,11 +546,19 @@ raw_copy_to_user(void __user *to, const void *from, unsigned long n)
 #ifndef CONFIG_UACCESS_WITH_MEMCPY
 	unsigned int __ua_flags;
 	__ua_flags = uaccess_save_and_enable();
+#ifdef CONFIG_VDMA_V100
+	n = bsp_copy_to_user(to, from, n);
+#else
 	n = arm_copy_to_user(to, from, n);
+#endif
 	uaccess_restore(__ua_flags);
 	return n;
 #else
+#ifdef CONFIG_VDMA_V100
+	return bsp_copy_to_user(to, from, n);
+#else
 	return arm_copy_to_user(to, from, n);
+#endif
 #endif
 }
 

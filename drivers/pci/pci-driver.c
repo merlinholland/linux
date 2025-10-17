@@ -18,6 +18,7 @@
 #include <linux/kexec.h>
 #include <linux/of_device.h>
 #include <linux/acpi.h>
+#include <linux/of_pci.h>
 #include "pci.h"
 #include "pcie/portdrv.h"
 
@@ -389,6 +390,9 @@ static int __pci_device_probe(struct pci_driver *drv, struct pci_dev *pci_dev)
 
 int __weak pcibios_alloc_irq(struct pci_dev *dev)
 {
+#ifdef CONFIG_SATA_AHCI
+	dev->irq = of_irq_parse_and_map_pci(dev, 0, 0);
+#endif
 	return 0;
 }
 

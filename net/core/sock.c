@@ -1690,7 +1690,7 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 
 		sock_reset_flag(newsk, SOCK_DONE);
 		mem_cgroup_sk_alloc(newsk);
-		cgroup_sk_alloc(&newsk->sk_cgrp_data);
+		cgroup_sk_clone(&newsk->sk_cgrp_data);
 
 		rcu_read_lock();
 		filter = rcu_dereference(sk->sk_filter);
@@ -2185,7 +2185,6 @@ static void sk_leave_memory_pressure(struct sock *sk)
 }
 
 /* On 32bit arches, an skb frag is limited to 2^15 */
-#define SKB_FRAG_PAGE_ORDER	get_order(32768)
 
 /**
  * skb_page_frag_refill - check that a page_frag contains enough room

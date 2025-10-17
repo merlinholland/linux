@@ -44,7 +44,7 @@
 #include <net/sock.h>
 #include <net/ip.h>
 #include <net/udp_tunnel.h>
-#include <net/addrconf.h>
+#include <net/ipv6_stubs.h>
 #include <linux/tipc_netlink.h>
 #include "core.h"
 #include "addr.h"
@@ -189,10 +189,13 @@ static int tipc_udp_xmit(struct net *net, struct sk_buff *skb,
 			.saddr = src->ipv6,
 			.flowi6_proto = IPPROTO_UDP
 		};
-		err = ipv6_stub->ipv6_dst_lookup(net, ub->ubsock->sk, &ndst,
-						 &fl6);
-		if (err)
+		ndst = ipv6_stub->ipv6_dst_lookup_flow(net,
+						       ub->ubsock->sk,
+						       &fl6, NULL);
+		if (IS_ERR(ndst)) {
+			err = PTR_ERR(ndst);
 			goto tx_error;
+		}
 		ttl = ip6_dst_hoplimit(ndst);
 		err = udp_tunnel6_xmit_skb(ndst, ub->ubsock->sk, skb, NULL,
 					   &src->ipv6, &dst->ipv6, 0, ttl, 0,

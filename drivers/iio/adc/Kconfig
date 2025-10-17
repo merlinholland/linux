@@ -315,6 +315,16 @@ config HI8435
 	  This driver can also be built as a module. If so, the module will be
 	  called hi8435.
 
+config VENDOR_LSADC
+	tristate "VENDOR LSADC driver"
+	depends on ARCH_BSP || COMPILE_TEST
+	help
+	  Say yes here to build support for the LSADC found in SoCs from
+	  vendor chip.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called vendor_lsadc.
+
 config HX711
 	tristate "AVIA HX711 ADC for weight cells"
 	depends on GPIOLIB

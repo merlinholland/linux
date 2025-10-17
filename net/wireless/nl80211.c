@@ -323,6 +323,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT] = { .type = NLA_FLAG },
 	[NL80211_ATTR_CONTROL_PORT_OVER_NL80211] = { .type = NLA_FLAG },
 	[NL80211_ATTR_PRIVACY] = { .type = NLA_FLAG },
+	[NL80211_ATTR_STATUS_CODE] = { .type = NLA_U16 },
 	[NL80211_ATTR_CIPHER_SUITE_GROUP] = { .type = NLA_U32 },
 	[NL80211_ATTR_WPA_VERSIONS] = { .type = NLA_U32 },
 	[NL80211_ATTR_PID] = { .type = NLA_U32 },
@@ -1643,7 +1644,7 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 
 	hdr = nl80211hdr_put(msg, portid, seq, flags, cmd);
 	if (!hdr)
-		return -ENOBUFS;
+		goto nla_put_failure;
 
 	if (WARN_ON(!state))
 		return -EINVAL;

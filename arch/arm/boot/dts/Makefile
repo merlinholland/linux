@@ -222,6 +222,67 @@ dtb-$(CONFIG_ARCH_HISI) += \
 	hi3519-demb.dtb
 dtb-$(CONFIG_ARCH_HIX5HD2) += \
 	hisi-x5hd2-dkb.dtb
+dtb-$(CONFIG_ARCH_SS524V100) += \
+	ss524v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS615V100) += \
+	ss615v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS522V100) += \
+	ss522v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS522V101) += \
+	ss522v101-demb.dtb
+dtb-$(CONFIG_ARCH_SS812V100) += \
+	ss812v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS101V200) += \
+	ss101v200-demb.dtb
+dtb-$(CONFIG_ARCH_SS101V500) += \
+	ss101v500-demb.dtb
+dtb-$(CONFIG_ARCH_SS101V300) += \
+	ss101v300-demb.dtb
+dtb-$(CONFIG_ARCH_SS101V600) += \
+	ss101v600-demb.dtb
+
+dtb-$(CONFIG_ARCH_SS813V100) += \
+	ss813v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS312V100) += \
+	ss312v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS313V100) += \
+	ss313v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS011V100) += \
+	ss011v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS012V100) += \
+	ss012v100-demb.dtb
+dtb-$(CONFIG_ARCH_SS612V100) += \
+	ss612v100-demb.dtb
+
+ifdef CONFIG_ARCH_BSP_AMP
+
+ifdef CONFIG_MFD_BSP_FMC
+dtb-$(CONFIG_ARCH_SS318V100) += \
+	ss318v100-flash.dtb
+dtb-$(CONFIG_ARCH_SS918V100) += \
+	ss918v100-flash.dtb
+dtb-$(CONFIG_ARCH_SS013V100) += \
+	ss013v100-flash.dtb
+else # no define CONFIG_MFD_BSP_FMC
+dtb-$(CONFIG_ARCH_SS318V100) += \
+	ss318v100-emmc.dtb
+dtb-$(CONFIG_ARCH_SS918V100) += \
+	ss918v100-emmc.dtb
+dtb-$(CONFIG_ARCH_SS013V100) += \
+	ss013v100-emmc.dtb
+endif
+
+else # no define CONFIG_ARCH_BSP_AMP
+
+ifdef CONFIG_MFD_BSP_FMC
+dtb-$(CONFIG_ARCH_SS918V100) += \
+	ss918v100-smp-flash.dtb
+else #CONFIG_MFD_BSP_FMC
+dtb-$(CONFIG_ARCH_SS918V100) += \
+	ss918v100-smp-emmc.dtb
+endif
+endif
+
 dtb-$(CONFIG_ARCH_INTEGRATOR) += \
 	integratorap.dtb \
 	integratorcp.dtb

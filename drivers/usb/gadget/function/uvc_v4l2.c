@@ -19,6 +19,8 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 
+#include <linux/iprec.h>
+
 #include "f_uvc.h"
 #include "uvc.h"
 #include "uvc_queue.h"
@@ -34,7 +36,7 @@ uvc_send_response(struct uvc_device *uvc, struct uvc_request_data *data)
 {
 	struct usb_composite_dev *cdev = uvc->func.config->cdev;
 	struct usb_request *req = uvc->control_req;
-
+	iprec("%s", __func__);
 	if (data->length < 0)
 		return usb_ep_set_halt(cdev->gadget->ep0);
 
@@ -57,7 +59,11 @@ struct uvc_format {
 
 static struct uvc_format uvc_formats[] = {
 	{ 16, V4L2_PIX_FMT_YUYV  },
+	{ 12, V4L2_PIX_FMT_NV21 },
+	{ 12, V4L2_PIX_FMT_NV12 },
 	{ 0,  V4L2_PIX_FMT_MJPEG },
+	{ 0,  V4L2_PIX_FMT_H264 },
+	{ 0,  V4L2_PIX_FMT_H265 },
 };
 
 static int
@@ -167,23 +173,34 @@ uvc_v4l2_qbuf(struct file *file, void *fh, struct v4l2_buffer *b)
 	struct video_device *vdev = video_devdata(file);
 	struct uvc_device *uvc = video_get_drvdata(vdev);
 	struct uvc_video *video = &uvc->video;
+#if !(IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC))
 	int ret;
 
 	ret = uvcg_queue_buffer(&video->queue, b);
 	if (ret < 0)
 		return ret;
 
-	return uvcg_video_pump(video);
+	schedule_work(&video->pump);
+
+	return ret;
+#else /* IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC) */
+	schedule_work(&video->pump);
+	return 0;
+#endif /* IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC) */
 }
 
 static int
 uvc_v4l2_dqbuf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
+#if IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC)
+	return 0;
+#else
 	struct video_device *vdev = video_devdata(file);
 	struct uvc_device *uvc = video_get_drvdata(vdev);
 	struct uvc_video *video = &uvc->video;
 
 	return uvcg_dequeue_buffer(&video->queue, b, file->f_flags & O_NONBLOCK);
+#endif
 }
 
 static int
@@ -193,15 +210,17 @@ uvc_v4l2_streamon(struct file *file, void *fh, enum v4l2_buf_type type)
 	struct uvc_device *uvc = video_get_drvdata(vdev);
 	struct uvc_video *video = &uvc->video;
 	int ret;
-
+	iprec("[%s] before uvcg_video_enable", __func__);
+#if !(IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC))
 	if (type != video->queue.queue.type)
 		return -EINVAL;
-
+#endif
 	/* Enable UVC video. */
 	ret = uvcg_video_enable(video, 1);
 	if (ret < 0)
 		return ret;
 
+	iprec("[%s] uvcg_video_enable return: %d", __func__, ret);
 	/*
 	 * Complete the alternate setting selection setup phase now that
 	 * userspace is ready to provide video frames.
@@ -218,10 +237,11 @@ uvc_v4l2_streamoff(struct file *file, void *fh, enum v4l2_buf_type type)
 	struct video_device *vdev = video_devdata(file);
 	struct uvc_device *uvc = video_get_drvdata(vdev);
 	struct uvc_video *video = &uvc->video;
-
+	iprec("%s", __func__);
+#if !(IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC))
 	if (type != video->queue.queue.type)
 		return -EINVAL;
-
+#endif
 	return uvcg_video_enable(video, 0);
 }
 

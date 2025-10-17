@@ -147,6 +147,9 @@ static void gic_enable_redist(bool enable)
 		val &= ~GICR_WAKER_ProcessorSleep;
 	else
 		val |= GICR_WAKER_ProcessorSleep;
+#if defined(CONFIG_ARCH_SS918V100) || defined(CONFIG_ARCH_SS318V100) || defined(CONFIG_ARCH_SS013V100)
+	writel_relaxed(0x2, rbase + 0x24);
+#endif
 	writel_relaxed(val, rbase + GICR_WAKER);
 
 	if (!enable) {		/* Check that GICR_WAKER is writeable */
@@ -409,13 +412,21 @@ static void __init gic_dist_init(void)
 	 * but that's not the intended use case anyway.
 	 */
 	for (i = 32; i < gic_data.irq_nr; i += 32)
+#if defined(CONFIG_ARCH_SS918V100) || defined(CONFIG_ARCH_SS318V100) || defined(CONFIG_ARCH_SS013V100)
+		writel_relaxed(0, base + GICD_IGROUPR + i / 8);
+#else
 		writel_relaxed(~0, base + GICD_IGROUPR + i / 8);
+#endif
 
 	gic_dist_config(base, gic_data.irq_nr, gic_dist_wait_for_rwp);
 
 	/* Enable distributor with ARE, Group1 */
+#if defined(CONFIG_ARCH_SS918V100) || defined(CONFIG_ARCH_SS318V100) || defined(CONFIG_ARCH_SS013V100)
+	writel_relaxed(0x37, base + GICD_CTLR);
+#else
 	writel_relaxed(GICD_CTLR_ARE_NS | GICD_CTLR_ENABLE_G1A | GICD_CTLR_ENABLE_G1,
 		       base + GICD_CTLR);
+#endif
 
 	/*
 	 * Set all global interrupts to the boot CPU only. ARE must be
@@ -668,8 +679,13 @@ static void gic_cpu_init(void)
 
 	rbase = gic_data_rdist_sgi_base();
 
+#if defined(CONFIG_ARCH_SS918V100) || defined(CONFIG_ARCH_SS318V100) || defined(CONFIG_ARCH_SS013V100)
+	writel_relaxed(0, rbase + GICR_IGROUPR0);
+	writel_relaxed(~0, rbase + GICR_IGRPMODR0);
+#else
 	/* Configure SGIs/PPIs as non-secure Group-1 */
 	writel_relaxed(~0, rbase + GICR_IGROUPR0);
+#endif
 
 	gic_cpu_config(rbase, gic_redist_wait_for_rwp);
 

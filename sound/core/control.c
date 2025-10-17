@@ -1288,7 +1288,7 @@ static int snd_ctl_elem_add(struct snd_ctl_file *file,
 		return -ENOMEM;
 
 	/* Check the number of elements for this userspace control. */
-	count = info->owner;
+	count = info->count;
 	if (count == 0)
 		count = 1;
 

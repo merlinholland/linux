@@ -122,6 +122,24 @@ static DEFINE_RAW_SPINLOCK(cpu_map_lock);
 static u8 gic_cpu_map[NR_GIC_CPU_IF] __read_mostly;
 
 static DEFINE_STATIC_KEY_TRUE(supports_deactivate_key);
+#if defined(CONFIG_ARCH_SS312V100) || defined(CONFIG_ARCH_SS313V100) || \
+    defined(CONFIG_ARCH_SS812V100)|| defined(CONFIG_ARCH_SS813V100)|| \
+    defined(CONFIG_ARCH_SS011V100) || defined(CONFIG_ARCH_SS012V100)
+#ifdef CONFIG_ARCH_BSP_AMP
+/*
+ *Uesed to process gic sgi interrupt *
+ */
+#define DIS_IRQ_CNT	6
+struct gic_sgi_handle {
+	unsigned int irq;
+	void (*handle)(unsigned int cpu_intrf,
+			unsigned int irq_num,
+			struct pt_regs *regs);
+};
+struct gic_sgi_handle dis_irq_handle[DIS_IRQ_CNT];
+EXPORT_SYMBOL(dis_irq_handle);
+#endif
+#endif
 
 static struct gic_chip_data gic_data[CONFIG_ARM_GIC_MAX_NR] __read_mostly;
 
@@ -350,6 +368,29 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 }
 #endif
 
+#if defined(CONFIG_ARCH_SS312V100)  || defined(CONFIG_ARCH_SS313V100)  || \
+    defined(CONFIG_ARCH_SS812V100) || defined(CONFIG_ARCH_SS813V100) || \
+    defined(CONFIG_ARCH_SS011V100)  || defined(CONFIG_ARCH_SS012V100)
+#ifdef CONFIG_ARCH_BSP_AMP
+/* used to process dis irq */
+int dis_irq_proc(u32 irqnr, u32 irqstat, struct pt_regs *regs)
+{
+	u32 idx;
+
+	for (idx = 0; idx < DIS_IRQ_CNT; idx++) {
+		if ((irqnr == dis_irq_handle[idx].irq)
+				&& (dis_irq_handle[idx].handle)) {
+			dis_irq_handle[idx].handle(((irqstat >> 10) & 0x7),
+					irqnr, regs);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+#endif
+#endif
+
 static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 {
 	u32 irqstat, irqnr;
@@ -371,6 +412,15 @@ static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 			writel_relaxed(irqstat, cpu_base + GIC_CPU_EOI);
 			if (static_branch_likely(&supports_deactivate_key))
 				writel_relaxed(irqstat, cpu_base + GIC_CPU_DEACTIVATE);
+#if defined(CONFIG_ARCH_SS312V100)  || defined(CONFIG_ARCH_SS313V100)  || \
+    defined(CONFIG_ARCH_SS812V100) || defined(CONFIG_ARCH_SS813V100) || \
+    defined(CONFIG_ARCH_SS011V100) || defined(CONFIG_ARCH_SS012V100)
+#ifdef CONFIG_ARCH_BSP_AMP
+			/*Call dis irq  proccess func*/
+			if (dis_irq_proc(irqnr, irqstat, regs))
+				continue;
+#endif
+#endif
 #ifdef CONFIG_SMP
 			/*
 			 * Ensure any shared data written by the CPU sending
@@ -482,7 +532,31 @@ static void gic_cpu_if_up(struct gic_chip_data *gic)
 	writel_relaxed(bypass | mode | GICC_ENABLE, cpu_base + GIC_CPU_CTRL);
 }
 
+#if defined(CONFIG_ARCH_SS919V100) || defined(CONFIG_ARCH_SS015V100)
+#include "irq-map-ss919v100.h"
+static void gic_dist_init_amp(struct gic_chip_data *gic)
+{
+	unsigned int i;
+	u32 cpumask;
+	unsigned int *irq_map_int = (unsigned int *)irq_map;
+	unsigned int gic_irqs = gic->gic_irqs;
+	void __iomem *base = gic_data_dist_base(gic);
 
+	writel_relaxed(GICD_DISABLE, base + GIC_DIST_CTRL);
+
+	/*
+	 * Set all global interrupts to this CPU only.
+	 */
+	for (i = 32; i < gic_irqs; i += 4) {
+	    cpumask = irq_map_int[i / 4];
+		writel_relaxed(cpumask, base + GIC_DIST_TARGET + i * 4 / 4);
+	}
+
+	gic_dist_config(base, gic_irqs, NULL);
+
+	writel_relaxed(GICD_ENABLE, base + GIC_DIST_CTRL);
+}
+#else
 static void gic_dist_init(struct gic_chip_data *gic)
 {
 	unsigned int i;
@@ -505,6 +579,7 @@ static void gic_dist_init(struct gic_chip_data *gic)
 
 	writel_relaxed(GICD_ENABLE, base + GIC_DIST_CTRL);
 }
+#endif
 
 static int gic_cpu_init(struct gic_chip_data *gic)
 {
@@ -1094,7 +1169,9 @@ static int gic_init_bases(struct gic_chip_data *gic, int irq_start,
 {
 	irq_hw_number_t hwirq_base;
 	int gic_irqs, irq_base, ret;
-
+	struct device_node *np;
+	void * sysctrl_reg_base;
+	int gic_dist_init_flag;
 	if (IS_ENABLED(CONFIG_GIC_NON_BANKED) && gic->percpu_offset) {
 		/* Frankein-GIC without banked registers... */
 		unsigned int cpu;
@@ -1174,7 +1251,25 @@ static int gic_init_bases(struct gic_chip_data *gic, int irq_start,
 		goto error;
 	}
 
-	gic_dist_init(gic);
+#define GIC_DIST_INIT_FLAG 0x47444946
+#define GIC_DIST_INIT_FLAG_OFFSET 0x0130
+	/* 0x47444946('G''D''I''F') is abbreviation of GIC_DIST_INIT_FLAG. */
+
+	np = of_find_compatible_node(NULL, NULL, "vendor,sysctrl");
+	sysctrl_reg_base = of_iomap(np, 0);
+	gic_dist_init_flag = readl(sysctrl_reg_base + GIC_DIST_INIT_FLAG_OFFSET);
+
+	if(gic_dist_init_flag != GIC_DIST_INIT_FLAG) {
+		printk("Gic dist init...\n");
+#if defined(CONFIG_ARCH_SS919V100) || defined(CONFIG_ARCH_SS015V100)
+		gic_dist_init_amp(gic);
+#else
+		gic_dist_init(gic);
+#endif
+		writel_relaxed(GIC_DIST_INIT_FLAG, sysctrl_reg_base + GIC_DIST_INIT_FLAG_OFFSET);
+	} else
+		printk("Gic dist not init...\n");
+
 	ret = gic_cpu_init(gic);
 	if (ret)
 		goto error;

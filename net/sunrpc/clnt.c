@@ -1053,6 +1053,8 @@ struct rpc_task *rpc_run_task(const struct rpc_task_setup *task_setup_data)
 	struct rpc_task *task;
 
 	task = rpc_new_task(task_setup_data);
+	if (IS_ERR(task))
+		return task;
 
 	rpc_task_set_client(task, task_setup_data->rpc_client);
 	rpc_task_set_rpc_message(task, task_setup_data->rpc_message);
@@ -1148,6 +1150,11 @@ struct rpc_task *rpc_run_bc_task(struct rpc_rqst *req)
 	 * Create an rpc_task to send the data
 	 */
 	task = rpc_new_task(&task_setup_data);
+	if (IS_ERR(task)) {
+		xprt_free_bc_request(req);
+		return task;
+	}
+
 	task->tk_rqstp = req;
 
 	/*
@@ -2007,6 +2014,7 @@ call_transmit_status(struct rpc_task *task)
 
 	switch (task->tk_status) {
 	case -EAGAIN:
+	case -ENOMEM:
 	case -ENOBUFS:
 		break;
 	default:
@@ -2176,6 +2184,8 @@ call_status(struct rpc_task *task)
 	case -ENOTCONN:
 		task->tk_action = call_bind;
 		break;
+	case -ENOMEM:
+	case -ENFILE:
 	case -ENOBUFS:
 		rpc_delay(task, HZ>>2);
 		/* fall through */

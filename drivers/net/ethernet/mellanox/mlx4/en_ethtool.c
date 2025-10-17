@@ -2078,14 +2078,17 @@ static int mlx4_en_get_module_eeprom(struct net_device *dev,
 		ret = mlx4_get_module_info(mdev->dev, priv->port,
 					   offset, ee->len - i, data + i);
 
-		if (!ret) /* Done reading */
+		if (!ret) {
+			/* DOM was not readable after all */
+			memset(data + i, 0, ee->len - i);
 			return 0;
+		}
 
 		if (ret < 0) {
 			en_err(priv,
 			       "mlx4_get_module_info i(%d) offset(%d) bytes_to_read(%d) - FAILED (0x%x)\n",
 			       i, offset, ee->len - i, ret);
-			return 0;
+			return ret;
 		}
 
 		i += ret;

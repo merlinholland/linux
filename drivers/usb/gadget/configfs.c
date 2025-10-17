@@ -233,9 +233,16 @@ static ssize_t gadget_dev_desc_bcdUSB_store(struct config_item *item,
 
 static ssize_t gadget_dev_desc_UDC_show(struct config_item *item, char *page)
 {
-	char *udc_name = to_gadget_info(item)->composite.gadget_driver.udc_name;
+	struct gadget_info *gi = to_gadget_info(item);
+	char *udc_name;
+	int ret;
 
-	return sprintf(page, "%s\n", udc_name ?: "");
+	mutex_lock(&gi->lock);
+	udc_name = gi->composite.gadget_driver.udc_name;
+	ret = sprintf(page, "%s\n", udc_name ?: "");
+	mutex_unlock(&gi->lock);
+
+	return ret;
 }
 
 static int unregister_gadget(struct gadget_info *gi)
@@ -259,6 +266,9 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	struct gadget_info *gi = to_gadget_info(item);
 	char *name;
 	int ret;
+
+	if (strlen(page) < len)
+		return -EOVERFLOW;
 
 	name = kstrdup(page, GFP_KERNEL);
 	if (!name)
@@ -1216,13 +1226,19 @@ static void purge_configs_funcs(struct gadget_info *gi)
 
 		list_for_each_entry_safe(f, tmp, &c->functions, list) {
 
+			if (f->disable)
+			    f->disable(f);
+
 			list_move_tail(&f->list, &cfg->func_list);
 			if (f->unbind) {
 				dev_dbg(&gi->cdev.gadget->dev,
-					"unbind function '%s'/%p\n",
-					f->name, f);
+				         "unbind function '%s'/%p\n",
+				         f->name, f);
 				f->unbind(c, f);
 			}
+
+			if (f->bind_deactivated)
+				usb_function_activate(f);
 		}
 		c->next_interface_id = 0;
 		memset(c->interface, 0, sizeof(c->interface));

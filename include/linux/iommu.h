@@ -25,6 +25,10 @@
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/of.h>
+#ifdef CONFIG_IOMMU_SVA
+#include <uapi/linux/iommu.h>
+#include <linux/mmu_notifier.h>
+#endif
 
 #define IOMMU_READ	(1 << 0)
 #define IOMMU_WRITE	(1 << 1)
@@ -48,13 +52,32 @@ struct bus_type;
 struct device;
 struct iommu_domain;
 struct notifier_block;
+#ifdef CONFIG_IOMMU_SVA
+struct iommu_fault_event;
+#endif
 
 /* iommu fault flags */
+#ifndef CONFIG_IOMMU_SVA
 #define IOMMU_FAULT_READ	0x0
 #define IOMMU_FAULT_WRITE	0x1
+#endif
+
+#ifdef CONFIG_IOMMU_SVA
+#define IOMMU_FAULT_READ		(1 << 0)
+#define IOMMU_FAULT_WRITE		(1 << 1)
+#define IOMMU_FAULT_EXEC		(1 << 2)
+#define IOMMU_FAULT_PRIV		(1 << 3)
+#endif
 
 typedef int (*iommu_fault_handler_t)(struct iommu_domain *,
 			struct device *, unsigned long, int, void *);
+
+#ifdef CONFIG_IOMMU_SVA
+typedef int (*iommu_dev_fault_handler_t)(struct iommu_fault_event *, void *);
+typedef int (*iommu_mm_exit_handler_t)(struct device *dev, int pasid, void *);
+
+#define IOMMU_SVA_FEAT_IOPF		(1 << 0)
+#endif
 
 struct iommu_domain_geometry {
 	dma_addr_t aperture_start; /* First address that can be mapped    */
@@ -94,7 +117,30 @@ struct iommu_domain {
 	void *handler_token;
 	struct iommu_domain_geometry geometry;
 	void *iova_cookie;
+#ifdef CONFIG_IOMMU_SVA
+	struct list_head mm_list;
+#endif
 };
+
+#ifdef CONFIG_IOMMU_SVA
+
+struct io_mm {
+	int			pasid;
+	/* IOMMU_SVA_FEAT_* */
+	unsigned long		flags;
+	struct list_head	devices;
+	struct kref		kref;
+#if defined(CONFIG_MMU_NOTIFIER)
+	struct mmu_notifier	notifier;
+#endif
+	struct mm_struct	*mm;
+
+	/* Release callback for this mm */
+	void (*release)(struct io_mm *io_mm);
+	/* For postponed release */
+	struct rcu_head		rcu;
+};
+#endif
 
 enum iommu_cap {
 	IOMMU_CAP_CACHE_COHERENCY,	/* IOMMU can enforce cache coherent DMA
@@ -124,6 +170,7 @@ enum iommu_attr {
 	DOMAIN_ATTR_FSL_PAMU_ENABLE,
 	DOMAIN_ATTR_FSL_PAMUV1,
 	DOMAIN_ATTR_NESTING,	/* two stages of translation */
+	DOMAIN_ATTR_DMA_USE_FLUSH_QUEUE, /* patch for sva */
 	DOMAIN_ATTR_MAX,
 };
 
@@ -155,7 +202,78 @@ struct iommu_resv_region {
 	enum iommu_resv_type	type;
 };
 
+#ifdef CONFIG_IOMMU_SVA
+/**
+ * iopf_queue_flush_t - Flush low-level page fault queue
+ *
+ * Report all faults currently pending in the low-level page fault queue
+ */
+struct iopf_queue;
+typedef int (*iopf_queue_flush_t)(void *cookie, struct device *dev);
+#endif
+
 #ifdef CONFIG_IOMMU_API
+
+#ifdef CONFIG_IOMMU_SVA
+/**
+ * enum page_response_code - Return status of fault handlers, telling the IOMMU
+ * driver how to proceed with the fault.
+ *
+ * @IOMMU_FAULT_STATUS_SUCCESS: Fault has been handled and the page tables
+ *	populated, retry the access. This is "Success" in PCI PRI.
+ * @IOMMU_FAULT_STATUS_FAILURE: General error. Drop all subsequent faults from
+ *	this device if possible. This is "Response Failure" in PCI PRI.
+ * @IOMMU_FAULT_STATUS_INVALID: Could not handle this fault, don't retry the
+ *	access. This is "Invalid Request" in PCI PRI.
+ */
+enum page_response_code {
+	IOMMU_PAGE_RESP_SUCCESS = 0,
+	IOMMU_PAGE_RESP_INVALID,
+	IOMMU_PAGE_RESP_FAILURE,
+};
+
+/**
+ * enum page_request_handle_t - Return page request/response handler status
+ *
+ * @IOMMU_FAULT_STATUS_HANDLED: Stop processing the fault, and do not send a
+ *	reply to the device.
+ * @IOMMU_FAULT_STATUS_CONTINUE: Fault was not handled. Call the next handler,
+ *	or terminate.
+ */
+enum page_request_handle_t {
+	IOMMU_PAGE_RESP_HANDLED = 0,
+	IOMMU_PAGE_RESP_CONTINUE,
+};
+
+/**
+ * Generic page response information based on PCI ATS and PASID spec.
+ * @addr: servicing page address
+ * @pasid: contains process address space ID
+ * @resp_code: response code
+ * @page_req_group_id: page request group index
+ * @type: group or stream/single page response
+ * @private_data: uniquely identify device-specific private data for an
+ *                individual page response
+ */
+struct page_response_msg {
+	u64 addr;
+	u32 pasid;
+	enum page_response_code resp_code;
+	u32 pasid_present:1;
+	u32 page_req_group_id;
+	u64 private_data;
+};
+#endif
+
+#ifdef CONFIG_IOMMU_SVA
+struct iommu_sva_param {
+	unsigned long features;
+	unsigned int min_pasid;
+	unsigned int max_pasid;
+	struct list_head mm_list;
+	iommu_mm_exit_handler_t mm_exit;
+};
+#endif
 
 /**
  * struct iommu_ops - iommu ops and capabilities
@@ -195,11 +313,31 @@ struct iommu_ops {
 
 	int (*attach_dev)(struct iommu_domain *domain, struct device *dev);
 	void (*detach_dev)(struct iommu_domain *domain, struct device *dev);
+#ifdef CONFIG_IOMMU_SVA
+	int (*sva_device_init)(struct device *dev,
+			       struct iommu_sva_param *param);
+	void (*sva_device_shutdown)(struct device *dev,
+				    struct iommu_sva_param *param);
+	struct io_mm *(*mm_alloc)(struct iommu_domain *domain,
+				  struct mm_struct *mm,
+				  unsigned long flags);
+	void (*mm_free)(struct io_mm *io_mm);
+	int (*mm_attach)(struct iommu_domain *domain, struct device *dev,
+			 struct io_mm *io_mm, bool attach_domain);
+	void (*mm_detach)(struct iommu_domain *domain, struct device *dev,
+			  struct io_mm *io_mm, bool detach_domain);
+	void (*mm_invalidate)(struct iommu_domain *domain, struct device *dev,
+			      struct io_mm *io_mm, unsigned long vaddr,
+			      size_t size);
+#endif
 	int (*map)(struct iommu_domain *domain, unsigned long iova,
 		   phys_addr_t paddr, size_t size, int prot);
 	size_t (*unmap)(struct iommu_domain *domain, unsigned long iova,
 		     size_t size);
 	void (*flush_iotlb_all)(struct iommu_domain *domain);
+#ifdef CONFIG_IOMMU_SVA
+	void (*flush_iotlb_single)(struct iommu_domain *domain, struct io_mm *io_mm);
+#endif
 	void (*iotlb_range_add)(struct iommu_domain *domain,
 				unsigned long iova, size_t size);
 	void (*iotlb_sync)(struct iommu_domain *domain);
@@ -231,6 +369,17 @@ struct iommu_ops {
 	int (*of_xlate)(struct device *dev, struct of_phandle_args *args);
 	bool (*is_attach_deferred)(struct iommu_domain *domain, struct device *dev);
 
+#ifdef CONFIG_IOMMU_SVA
+	int (*bind_pasid_table)(struct iommu_domain *domain, struct device *dev,
+				struct pasid_table_config *pasidt_binfo);
+	void (*unbind_pasid_table)(struct iommu_domain *domain,
+				struct device *dev);
+
+	int (*sva_invalidate)(struct iommu_domain *domain,
+		struct device *dev, struct tlb_invalidate_info *inv_info);
+
+	int (*page_response)(struct device *dev, struct page_response_msg *msg);
+#endif
 	unsigned long pgsize_bitmap;
 };
 
@@ -247,6 +396,117 @@ struct iommu_device {
 	struct fwnode_handle *fwnode;
 	struct device *dev;
 };
+
+#ifdef CONFIG_IOMMU_SVA
+/*  Generic fault types, can be expanded IRQ remapping fault */
+enum iommu_fault_type {
+	IOMMU_FAULT_DMA_UNRECOV = 1,	/* unrecoverable fault */
+	IOMMU_FAULT_PAGE_REQ,		/* page request fault */
+};
+
+enum iommu_fault_reason {
+	IOMMU_FAULT_REASON_UNKNOWN = 0,
+
+	/* IOMMU internal error, no specific reason to report out */
+	IOMMU_FAULT_REASON_INTERNAL,
+
+	/* Could not access the PASID table */
+	IOMMU_FAULT_REASON_PASID_FETCH,
+
+	/*
+	 * PASID is out of range (e.g. exceeds the maximum PASID
+	 * supported by the IOMMU) or disabled.
+	 */
+	IOMMU_FAULT_REASON_PASID_INVALID,
+
+	/* Could not access the page directory (Invalid PASID entry) */
+	IOMMU_FAULT_REASON_PGD_FETCH,
+
+	/* Could not access the page table entry (Bad address) */
+	IOMMU_FAULT_REASON_PTE_FETCH,
+
+	/* Protection flag check failed */
+	IOMMU_FAULT_REASON_PERMISSION,
+};
+
+/**
+ * struct iommu_fault_event - Generic per device fault data
+ *
+ * - PCI and non-PCI devices
+ * - Recoverable faults (e.g. page request), information based on PCI ATS
+ * and PASID spec.
+ * - Un-recoverable faults of device interest
+ * - DMA remapping and IRQ remapping faults
+ *
+ * @list pending fault event list, used for tracking responses
+ * @type contains fault type.
+ * @reason fault reasons if relevant outside IOMMU driver, IOMMU driver internal
+ *         faults are not reported
+ * @addr: tells the offending page address
+ * @pasid: contains process address space ID, used in shared virtual memory(SVM)
+ * @rid: requestor ID
+ * @page_req_group_id: page request group index
+ * @last_req: last request in a page request group
+ * @pasid_valid: indicates if the PRQ has a valid PASID
+ * @prot: page access protection flag, e.g. IOMMU_FAULT_READ, IOMMU_FAULT_WRITE
+ * @device_private: if present, uniquely identify device-specific
+ *                  private data for an individual page request.
+ * @iommu_private: used by the IOMMU driver for storing fault-specific
+ *                 data. Users should not modify this field before
+ *                 sending the fault response.
+ * @expire: time limit in jiffies will wait for page response
+ */
+struct iommu_fault_event {
+	struct list_head list;
+	enum iommu_fault_type type;
+	enum iommu_fault_reason reason;
+	u64 addr;
+	u32 pasid;
+	u32 page_req_group_id;
+	u32 last_req : 1;
+	u32 pasid_valid : 1;
+	u32 prot;
+	u64 device_private;
+	u64 iommu_private;
+	u64 expire;
+};
+
+/**
+ * struct iommu_fault_param - per-device IOMMU fault data
+ * @dev_fault_handler: Callback function to handle IOMMU faults at device level
+ * @data: handler private data
+ * @faults: holds the pending faults which needs response, e.g. page response.
+ * @timer: track page request pending time limit
+ * @lock: protect pending PRQ event list
+ */
+struct iommu_fault_param {
+	iommu_dev_fault_handler_t handler;
+	struct list_head faults;
+	struct timer_list timer;
+	struct mutex lock;
+	void *data;
+};
+#endif
+
+#ifdef CONFIG_IOMMU_SVA
+/**
+ * struct iommu_param - collection of per-device IOMMU data
+ *
+ * @fault_param: IOMMU detected device fault reporting data
+ * @sva_param: SVA parameters
+ * @iopf_param: I/O Page Fault queue and data
+ *
+ * TODO: migrate other per device data pointers under iommu_dev_data, e.g.
+ *	struct iommu_group	*iommu_group;
+ *	struct iommu_fwspec	*iommu_fwspec;
+ */
+struct iommu_param {
+	struct mutex lock;
+	struct iommu_fault_param *fault_param;
+	struct iommu_sva_param *sva_param;
+	struct iopf_device_param *iopf_param;
+};
+#endif
 
 int  iommu_device_register(struct iommu_device *iommu);
 void iommu_device_unregister(struct iommu_device *iommu);
@@ -292,6 +552,17 @@ extern int iommu_attach_device(struct iommu_domain *domain,
 			       struct device *dev);
 extern void iommu_detach_device(struct iommu_domain *domain,
 				struct device *dev);
+
+#ifdef CONFIG_IOMMU_SVA
+extern int iommu_bind_pasid_table(struct iommu_domain *domain,
+		struct device *dev, struct pasid_table_config *pasidt_binfo);
+extern void iommu_unbind_pasid_table(struct iommu_domain *domain,
+				struct device *dev);
+
+extern int iommu_sva_invalidate(struct iommu_domain *domain,
+		struct device *dev, struct tlb_invalidate_info *inv_info);
+#endif
+
 extern struct iommu_domain *iommu_get_domain_for_dev(struct device *dev);
 extern int iommu_map(struct iommu_domain *domain, unsigned long iova,
 		     phys_addr_t paddr, size_t size, int prot);
@@ -336,6 +607,18 @@ extern int iommu_group_register_notifier(struct iommu_group *group,
 					 struct notifier_block *nb);
 extern int iommu_group_unregister_notifier(struct iommu_group *group,
 					   struct notifier_block *nb);
+
+#ifdef CONFIG_IOMMU_SVA
+extern int iommu_register_device_fault_handler(struct device *dev,
+					iommu_dev_fault_handler_t handler,
+					void *data);
+
+extern int iommu_unregister_device_fault_handler(struct device *dev);
+
+extern int iommu_report_device_fault(struct device *dev, struct iommu_fault_event *evt);
+
+extern int iommu_page_response(struct device *dev, struct page_response_msg *msg);
+#endif
 extern int iommu_group_id(struct iommu_group *group);
 extern struct iommu_group *iommu_group_get_for_dev(struct device *dev);
 extern struct iommu_domain *iommu_group_default_domain(struct iommu_group *);
@@ -345,6 +628,11 @@ extern int iommu_domain_get_attr(struct iommu_domain *domain, enum iommu_attr,
 extern int iommu_domain_set_attr(struct iommu_domain *domain, enum iommu_attr,
 				 void *data);
 
+#ifdef CONFIG_IOMMU_SVA
+extern struct iommu_domain *iommu_group_share_domain(struct iommu_group *group);
+extern struct iommu_domain *iommu_group_unshare_domain(
+						struct iommu_group *group);
+#endif
 /* Window handling function prototypes */
 extern int iommu_domain_window_enable(struct iommu_domain *domain, u32 wnd_nr,
 				      phys_addr_t offset, u64 size,
@@ -390,15 +678,37 @@ struct iommu_fwspec {
 	const struct iommu_ops	*ops;
 	struct fwnode_handle	*iommu_fwnode;
 	void			*iommu_priv;
+#ifdef CONFIG_IOMMU_SVA
+	u32			flags;
+#endif
 	unsigned int		num_ids;
+#ifdef CONFIG_IOMMU_SVA
+	unsigned int		num_pasid_bits;
+	bool			can_stall;
+#endif
 	u32			ids[1];
 };
+
+#ifdef CONFIG_IOMMU_SVA
+/* Firmware disabled ATS in the root complex */
+#define IOMMU_FWSPEC_PCI_NO_ATS			(1 << 0)
+#endif
 
 int iommu_fwspec_init(struct device *dev, struct fwnode_handle *iommu_fwnode,
 		      const struct iommu_ops *ops);
 void iommu_fwspec_free(struct device *dev);
 int iommu_fwspec_add_ids(struct device *dev, u32 *ids, int num_ids);
 const struct iommu_ops *iommu_ops_from_fwnode(struct fwnode_handle *fwnode);
+#ifdef CONFIG_IOMMU_SVA
+extern int iommu_process_bind_group(struct iommu_group *group,
+				    struct task_struct *task, int *pasid,
+				    int flags);
+extern int iommu_process_unbind_group(struct iommu_group *group, int pasid);
+
+extern int iommu_sva_bind_device(struct device *dev, struct mm_struct *mm,
+				int *pasid, unsigned long flags, void *drvdata);
+extern int iommu_sva_unbind_device(struct device *dev, int pasid);
+#endif
 
 #else /* CONFIG_IOMMU_API */
 
@@ -406,7 +716,9 @@ struct iommu_ops {};
 struct iommu_group {};
 struct iommu_fwspec {};
 struct iommu_device {};
-
+#ifdef CONFIG_IOMMU_SVA
+struct iommu_fault_param {};
+#endif
 static inline bool iommu_present(struct bus_type *bus)
 {
 	return false;
@@ -599,6 +911,31 @@ static inline int iommu_group_unregister_notifier(struct iommu_group *group,
 	return 0;
 }
 
+#ifdef CONFIG_IOMMU_SVA
+static inline int iommu_register_device_fault_handler(struct device *dev,
+						iommu_dev_fault_handler_t handler,
+						void *data)
+{
+	return 0;
+}
+
+static inline int iommu_unregister_device_fault_handler(struct device *dev)
+{
+	return 0;
+}
+
+static inline int iommu_report_device_fault(struct device *dev, struct iommu_fault_event *evt)
+{
+	return 0;
+}
+
+static inline int iommu_page_response(struct device *dev,
+				      struct page_response_msg *msg)
+{
+	return -ENODEV;
+}
+#endif
+
 static inline int iommu_group_id(struct iommu_group *group)
 {
 	return -ENODEV;
@@ -684,7 +1021,88 @@ const struct iommu_ops *iommu_ops_from_fwnode(struct fwnode_handle *fwnode)
 	return NULL;
 }
 
+#ifdef CONFIG_IOMMU_SVA
+static inline
+struct iommu_domain *iommu_group_share_domain(struct iommu_group *group)
+{
+	return NULL;
+}
+
+static inline
+struct iommu_domain *iommu_group_unshare_domain(struct iommu_group *group)
+{
+	return NULL;
+}
+
+static inline
+int iommu_bind_pasid_table(struct iommu_domain *domain, struct device *dev,
+			struct pasid_table_config *pasidt_binfo)
+{
+	return -EINVAL;
+}
+
+static inline
+void iommu_unbind_pasid_table(struct iommu_domain *domain, struct device *dev)
+{
+}
+
+static inline int iommu_sva_invalidate(struct iommu_domain *domain,
+		struct device *dev, struct tlb_invalidate_info *inv_info)
+{
+	return -EINVAL;
+}
+
+static inline int iommu_sva_bind_device(struct device *dev,
+					struct mm_struct *mm, int *pasid,
+					unsigned long flags, void *drvdata)
+{
+	return -ENODEV;
+}
+
+static inline int iommu_sva_unbind_device(struct device *dev, int pasid)
+{
+	return -ENODEV;
+}
+
+static inline int iommu_process_bind_group(struct iommu_group *group,
+					   struct task_struct *task, int *pasid,
+					   int flags)
+{
+	return -ENODEV;
+}
+
+static inline int iommu_process_unbind_group(struct iommu_group *group,
+					     int pasid)
+{
+	return -ENODEV;
+}
+#endif
 #endif /* CONFIG_IOMMU_API */
+
+#ifdef CONFIG_IOMMU_SVA
+extern int iommu_sva_device_init(struct device *dev, unsigned long features,
+				 unsigned int max_pasid,
+				 iommu_mm_exit_handler_t mm_exit);
+extern int iommu_sva_device_shutdown(struct device *dev);
+extern int __iommu_sva_bind_device(struct device *dev, struct mm_struct *mm,
+				   int *pasid, unsigned long flags,
+				   void *drvdata);
+extern int __iommu_sva_unbind_device(struct device *dev, int pasid);
+extern void __iommu_sva_unbind_dev_all(struct device *dev);
+
+extern struct mm_struct *iommu_sva_find(int pasid);
+#endif
+
+#ifdef CONFIG_IOMMU_PAGE_FAULT
+extern int iommu_queue_iopf(struct iommu_fault_event *evt, void *cookie);
+
+extern int iopf_queue_add_device(struct iopf_queue *queue, struct device *dev);
+extern int iopf_queue_remove_device(struct device *dev);
+extern int iopf_queue_flush_dev(struct device *dev);
+extern struct iopf_queue *
+iopf_queue_alloc(const char *name, iopf_queue_flush_t flush, void *cookie);
+extern void iopf_queue_free(struct iopf_queue *queue);
+#endif
 
 #ifdef CONFIG_IOMMU_DEBUGFS
 extern	struct dentry *iommu_debugfs_dir;

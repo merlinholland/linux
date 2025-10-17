@@ -1,0 +1,191 @@
+
+config COMMON_CLK_SS528V100
+	tristate "SS528V100 Clock Driver"
+	depends on ARCH_SS528V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS528V100.
+
+config COMMON_CLK_SS625V100
+	tristate "SS625V100 Clock Driver"
+	depends on ARCH_SS625V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS625V100.
+
+config COMMON_CLK_SS524V100
+	tristate "SS524V100 Clock Driver"
+	depends on ARCH_SS524V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS524V100.
+
+config COMMON_CLK_SS615V100
+	tristate "SS615V100 Clock Driver"
+	depends on ARCH_SS615V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS615V100.
+
+config COMMON_CLK_SS522V100
+	tristate "SS522V100 Clock Driver"
+	depends on ARCH_SS522V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS522V100.
+
+config COMMON_CLK_SS522V101
+	tristate "SS522V101 Clock Driver"
+	depends on ARCH_SS522V101 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS522V101.
+config COMMON_CLK_SS812V100
+	tristate "SS812V100 Clock Driver"
+	depends on ARCH_SS812V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS812V100.
+
+config COMMON_CLK_SS101V200
+	tristate "SS101V200 Clock Driver"
+	depends on ARCH_SS101V200 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS101V200.
+
+config COMMON_CLK_SS101V500
+	tristate "SS101V500 Clock Driver"
+	depends on ARCH_SS101V500 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS101V500.
+
+config COMMON_CLK_SS101V300
+	tristate "SS101V300 Clock Driver"
+	depends on ARCH_SS101V300 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS101V300.
+
+config COMMON_CLK_SS101V600
+	tristate "SS101V600 Clock Driver"
+	depends on ARCH_SS101V600 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS101V600.
+
+config COMMON_CLK_SS813V100
+	tristate "SS813V100 Clock Driver"
+	depends on ARCH_SS813V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS813V100.
+
+config COMMON_CLK_SS312V100
+	tristate "SS312V100 Clock Driver"
+	depends on ARCH_SS312V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS312V100.
+
+config COMMON_CLK_SS313V100
+	tristate "SS313V100 Clock Driver"
+	depends on ARCH_SS313V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS313V100.
+
+config COMMON_CLK_SS011V100
+	tristate "SS011V100 Clock Driver"
+	depends on ARCH_SS011V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS011V100.
+
+config COMMON_CLK_SS012V100
+	tristate "SS012V100 Clock Driver"
+	depends on ARCH_SS012V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS012V100.
+
+config COMMON_CLK_SS612V100
+	tristate "SS612V100 Clock Driver"
+	depends on ARCH_SS612V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for SS612V100.
+
+config COMMON_CLK_SS919V100
+	tristate "SS919V100 Clock Driver"
+	depends on ARCH_SS919V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for ss919v100.
+
+config COMMON_CLK_SS015V100
+	tristate "SS015V100 Clock Driver"
+	depends on ARCH_SS015V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for ss015v100.
+
+config COMMON_CLK_SS318V100
+	tristate "SS318V100 Clock Driver"
+	depends on ARCH_SS318V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for ss318v100.
+
+config COMMON_CLK_SS918V100
+	tristate "SS918V100 Clock Driver"
+	depends on ARCH_SS918V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for ss918v100.
+
+config COMMON_CLK_SS013V100
+	tristate "SS013V100 Clock Driver"
+	depends on ARCH_SS013V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for ss013v100.
+
+config COMMON_CLK_SS928V100
+	tristate "SS928V100 Clock Driver"
+	depends on ARCH_SS928V100 || ARCH_SS927V100 || COMPILE_TEST
+	select RESET_BSP
+	default ARCH_BSP
+	help
+	  Build the clock driver for ss928v100.
+	  
+config RESET_BSP
+	bool "Vendor Reset Controller Driver"
+	depends on ARCH_BSP || COMPILE_TEST || ARCH_BSP
+	select RESET_CONTROLLER
+	help
+	  Build reset controller driver for Vendor device chipsets.
+

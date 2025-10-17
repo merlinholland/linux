@@ -536,6 +536,13 @@ static void unix_release_sock(struct sock *sk, int embrion)
 	sk->sk_state = TCP_CLOSE;
 	unix_state_unlock(sk);
 
+#if IS_ENABLED(CONFIG_AF_UNIX_OOB)
+	if (u->oob_skb) {
+		kfree_skb(u->oob_skb);
+		u->oob_skb = NULL;
+	}
+#endif
+
 	wake_up_interruptible_all(&u->peer_wait);
 
 	skpair = unix_peer(sk);

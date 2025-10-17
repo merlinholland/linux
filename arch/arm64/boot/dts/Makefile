@@ -26,3 +26,8 @@ subdir-y += synaptics
 subdir-y += ti
 subdir-y += xilinx
 subdir-y += zte
+subdir-y += vendor
+
+dtbs: $(addprefix $(obj)/, $(DTB_LIST))
+
+clean-files := dts/*.dtb *.dtb

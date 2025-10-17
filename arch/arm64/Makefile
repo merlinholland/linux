@@ -12,6 +12,7 @@
 
 LDFLAGS_vmlinux	:=--no-undefined -X
 CPPFLAGS_vmlinux.lds = -DTEXT_OFFSET=$(TEXT_OFFSET)
+OBJCOPYFLAGS	:=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 GZFLAGS		:=-9
 
 ifeq ($(CONFIG_RELOCATABLE), y)
@@ -113,14 +114,22 @@ core-$(CONFIG_EFI_STUB) += $(objtree)/drivers/firmware/efi/libstub/lib.a
 
 # Default target when executing plain make
 boot		:= arch/arm64/boot
+
+ifeq ($(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE),y)
+KBUILD_IMAGE	:= $(boot)/$(subst $\",,$(CONFIG_BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME))
+else
 KBUILD_IMAGE	:= $(boot)/Image.gz
+endif
+
 KBUILD_DTBS	:= dtbs
 
-all:	Image.gz $(KBUILD_DTBS)
+all:	$(KBUILD_IMAGE) $(KBUILD_DTBS)
 
 
-Image: vmlinux
+uImage Image: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
+
+uImage: dtbs
 
 Image.%: Image
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
@@ -138,6 +147,9 @@ dtbs: prepare scripts
 
 dtbs_install:
 	$(Q)$(MAKE) $(dtbinst)=$(boot)/dts
+
+Image-dtb Image.gz-dtb: vmlinux scripts dtbs
+	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
 
 PHONY += vdso_install
 vdso_install:

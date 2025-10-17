@@ -53,7 +53,11 @@ extern void fpundefinstr(void);
 
 void mmioset(void *, unsigned int, size_t);
 void mmiocpy(void *, const void *, size_t);
-
+#ifdef CONFIG_VDMA_V100
+extern int vdma_flag;
+extern int vdma_m2m_copy(void *dst, const void *src, size_t count);
+int vdma_waterline = CONFIG_VDMA_TRANSFER_THRESHOLD;
+#endif
 	/* platform dependent support */
 EXPORT_SYMBOL(arm_delay_ops);
 
@@ -89,6 +93,27 @@ EXPORT_SYMBOL(strrchr);
 EXPORT_SYMBOL(memset);
 EXPORT_SYMBOL(__memset32);
 EXPORT_SYMBOL(__memset64);
+
+#ifdef CONFIG_VDMA_V100
+void *memcpy(void *dest, const void *src, size_t n)
+{
+	int ret;
+
+	if (n >= vdma_waterline * 1024) {
+		if (vdma_flag == 1) {
+			ret = vdma_m2m_copy(dest, src, n);
+
+			if (ret < 0)
+				_memcpy(dest, src, n);
+		} else if (vdma_flag == 0)
+			_memcpy(dest, src, n);
+	} else
+		_memcpy(dest, src, n);
+
+	return dest;
+}
+#endif
+
 EXPORT_SYMBOL(memcpy);
 EXPORT_SYMBOL(memmove);
 EXPORT_SYMBOL(memchr);
@@ -99,6 +124,49 @@ EXPORT_SYMBOL(mmiocpy);
 #ifdef CONFIG_MMU
 EXPORT_SYMBOL(copy_page);
 
+#ifdef CONFIG_VDMA_V100
+unsigned long bsp_copy_from_user(void *to,
+		const void __user *from, unsigned long n)
+{
+	int ret = n;
+
+	if (n >= vdma_waterline * 1024) {
+		if (vdma_flag == 1) {
+			ret = vdma_m2m_copy(to, from, n);
+
+			if (ret < 0)
+				ret = arm_copy_from_user(to, from, n);
+		} else if (vdma_flag == 0)
+			ret = arm_copy_from_user(to, from, n);
+	} else
+		ret = arm_copy_from_user(to, from, n);
+
+	return (unsigned long)ret;
+}
+EXPORT_SYMBOL(bsp_copy_from_user);
+
+unsigned long bsp_copy_to_user(void *to,
+			const void __user *from,
+			unsigned long n)
+{
+	int ret = n;
+
+	if (n >= vdma_waterline * 1024) {
+		if (vdma_flag == 1) {
+			ret = vdma_m2m_copy(to, from, n);
+
+			if (ret < 0)
+				ret = arm_copy_to_user(to, from, n);
+		} else if (vdma_flag == 0)
+			ret = arm_copy_to_user(to, from, n);
+	} else
+		ret = arm_copy_to_user(to, from, n);
+
+	return (unsigned long)ret;
+}
+EXPORT_SYMBOL(bsp_copy_to_user);
+
+#endif
 EXPORT_SYMBOL(arm_copy_from_user);
 EXPORT_SYMBOL(arm_copy_to_user);
 EXPORT_SYMBOL(arm_clear_user);

@@ -2,10 +2,9 @@
 # define_trace.h needs to know how to find our header
 CFLAGS_trace.o				:= -I$(src)
 
-obj-$(CONFIG_USB_DWC3)			+= dwc3.o
+obj-$(CONFIG_USB_DWC3)			+= dwc3.o dwc3-bsp.o
 
-dwc3-y					:= core.o
-
+dwc3-y					:= core.o proc.o
 ifneq ($(CONFIG_TRACING),)
 	dwc3-y				+= trace.o
 endif

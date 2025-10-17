@@ -43,6 +43,12 @@ struct uvc_descriptor_header;
 #define UVC_WARN_MINMAX				0
 #define UVC_WARN_PROBE_DEF			1
 
+#define ALT_EP0    0
+#define ALT_EP1    1
+#define ALT_EP2    2
+#define ALT_EP3    3
+#define ALT_EP4    4
+
 extern unsigned int uvc_gadget_trace_param;
 
 #define uvc_trace(flag, msg...) \
@@ -64,9 +70,37 @@ extern unsigned int uvc_gadget_trace_param;
  * Driver specific constants
  */
 
-#define UVC_NUM_REQUESTS			4
+#define UVC_SG_REQ
+
+#ifdef UVC_SG_REQ
+#define UVC_NUM_REQUESTS	1
+#else
+#define UVC_NUM_REQUESTS	32
+#endif
 #define UVC_MAX_REQUEST_SIZE			64
 #define UVC_MAX_EVENTS				4
+
+#if IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC)
+/* ------------------------------------------------------------------------
+ * UVC packet operation
+ */
+struct uvc_video;
+struct uvc_pack_trans {
+	struct list_head list;
+
+	uint64_t     addr;
+	unsigned int len;
+	unsigned int buf_used;
+
+	bool is_frame_end;
+	bool need_free;
+
+	struct uvc_pack *pack;
+	int frame_cnts;
+	struct uvc_video *video;
+	spinlock_t lock;
+};
+#endif /* IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC) */
 
 /* ------------------------------------------------------------------------
  * Structures
@@ -74,6 +108,8 @@ extern unsigned int uvc_gadget_trace_param;
 
 struct uvc_video {
 	struct usb_ep *ep;
+
+	struct work_struct pump;
 
 	/* Frame parameters */
 	u8 bpp;
@@ -83,6 +119,9 @@ struct uvc_video {
 	unsigned int imagesize;
 	struct mutex mutex;	/* protects frame parameters */
 
+	unsigned int num_sgs; /* record base */
+	__u8 *sg_buf;
+
 	/* Requests */
 	unsigned int req_size;
 	struct usb_request *req[UVC_NUM_REQUESTS];
@@ -90,8 +129,13 @@ struct uvc_video {
 	struct list_head req_free;
 	spinlock_t req_lock;
 
+#if IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC)
+	void (*encode) (struct usb_request *req, struct uvc_video *video,
+			struct uvc_pack_trans *pack);
+#else
 	void (*encode) (struct usb_request *req, struct uvc_video *video,
 			struct uvc_buffer *buf);
+#endif /* IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC) */
 
 	/* Context data used by the completion handler */
 	__u32 payload_size;
@@ -99,6 +143,7 @@ struct uvc_video {
 
 	struct uvc_video_queue queue;
 	unsigned int fid;
+	volatile bool is_streaming;
 };
 
 enum uvc_state {

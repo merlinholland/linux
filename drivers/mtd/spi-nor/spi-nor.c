@@ -41,6 +41,73 @@
 #define SPI_NOR_MAX_ID_LEN	6
 #define SPI_NOR_MAX_ADDR_WIDTH	4
 
+#ifdef CONFIG_ARCH_BSP
+struct spi_nor_read_command {
+	u8			num_mode_clocks;
+	u8			num_wait_states;
+	u8			opcode;
+	enum spi_nor_protocol	proto;
+};
+
+struct spi_nor_pp_command {
+	u8			opcode;
+	enum spi_nor_protocol	proto;
+};
+
+enum spi_nor_read_command_index {
+	SNOR_CMD_READ,
+	SNOR_CMD_READ_FAST,
+	SNOR_CMD_READ_1_1_1_DTR,
+
+	/* Dual SPI */
+	SNOR_CMD_READ_1_1_2,
+	SNOR_CMD_READ_1_2_2,
+	SNOR_CMD_READ_2_2_2,
+	SNOR_CMD_READ_1_2_2_DTR,
+
+	/* Quad SPI */
+	SNOR_CMD_READ_1_1_4,
+	SNOR_CMD_READ_1_4_4,
+	SNOR_CMD_READ_4_4_4,
+	SNOR_CMD_READ_1_4_4_DTR,
+
+	/* Octo SPI */
+	SNOR_CMD_READ_1_1_8,
+	SNOR_CMD_READ_1_8_8,
+	SNOR_CMD_READ_8_8_8,
+	SNOR_CMD_READ_1_8_8_DTR,
+
+	SNOR_CMD_READ_MAX
+};
+
+enum spi_nor_pp_command_index {
+	SNOR_CMD_PP,
+
+	/* Quad SPI */
+	SNOR_CMD_PP_1_1_4,
+	SNOR_CMD_PP_1_4_4,
+	SNOR_CMD_PP_4_4_4,
+
+	/* Octo SPI */
+	SNOR_CMD_PP_1_1_8,
+	SNOR_CMD_PP_1_8_8,
+	SNOR_CMD_PP_8_8_8,
+
+	SNOR_CMD_PP_MAX
+};
+#endif /*CONFIG_ARCH_BSP*/
+
+struct spi_nor_flash_parameter {
+	u64				size;
+	u32				page_size;
+
+	struct spi_nor_hwcaps		hwcaps;
+	struct spi_nor_read_command	reads[SNOR_CMD_READ_MAX];
+	struct spi_nor_pp_command	page_programs[SNOR_CMD_PP_MAX];
+
+	int (*quad_enable)(struct spi_nor *nor);
+};
+
 struct flash_info {
 	char		*name;
 
@@ -91,6 +158,11 @@ struct flash_info {
 #define USE_CLSR		BIT(14)	/* use CLSR command */
 
 	int	(*quad_enable)(struct spi_nor *nor);
+
+#ifdef CONFIG_ARCH_BSP
+	const struct spi_nor_flash_parameter *params;
+	u32 clkrate;
+#endif /*CONFIG_ARCH_BSP*/
 };
 
 #define JEDEC_MFR(info)	((info)->id[0])
@@ -522,6 +594,13 @@ static int spi_nor_erase(struct mtd_info *mtd, struct erase_info *instr)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_BSP_SPI_BLOCK_PROTECT
+	if ((nor->level) && (addr < nor->end_addr)) {
+		dev_err(nor->dev, "Error: The erase area was locked\n");
+		spi_nor_unlock_and_unprep(nor, SPI_NOR_OPS_ERASE);
+		return -EINVAL;
+	}
+#endif
 	/* whole-chip erase? */
 	if (len == mtd->size && !(nor->flags & SNOR_F_NO_OP_CHIP_ERASE)) {
 		unsigned long timeout;
@@ -910,6 +989,243 @@ static int spi_nor_is_locked(struct mtd_info *mtd, loff_t ofs, uint64_t len)
 
 static int macronix_quad_enable(struct spi_nor *nor);
 
+#ifdef CONFIG_ARCH_BSP
+static int spansion_quad_enable(struct spi_nor *nor);
+static int gd_quad_enable(struct spi_nor *nor);
+static int xtx_quad_enable(struct spi_nor *nor);
+static int puya_quad_enable(struct spi_nor *nor);
+static int puya_quad_enable(struct spi_nor *nor);
+
+#define SNOR_RD_MODES			\
+	(SNOR_HWCAPS_READ |			\
+	 SNOR_HWCAPS_READ_FAST |			\
+	 SNOR_HWCAPS_READ_1_1_2 |			\
+	 SNOR_HWCAPS_READ_1_2_2 |			\
+	 SNOR_HWCAPS_READ_1_1_4 |			\
+	 SNOR_HWCAPS_READ_1_4_4)
+
+#define SNOR_WR_MODES			\
+	(SNOR_HWCAPS_PP |			\
+	 SNOR_HWCAPS_PP_1_1_4)
+
+#define SNOR_EON_RD_MODES			\
+	(SNOR_HWCAPS_READ |			\
+	 SNOR_HWCAPS_READ_FAST |			\
+	 SNOR_HWCAPS_READ_1_1_2 |			\
+	 SNOR_HWCAPS_READ_1_2_2)
+
+#define SNOR_EON_WR_MODES			\
+	(SNOR_HWCAPS_PP)
+
+#define SNOR_PARAGON_WR_MODES			\
+	(SNOR_HWCAPS_PP)
+
+#define SNOR_MXIC_WR_MODES			\
+	(SNOR_HWCAPS_PP |			\
+	 SNOR_HWCAPS_PP_1_4_4)
+
+static const struct spi_nor_flash_parameter eon_params = {
+	.hwcaps.mask		= SNOR_EON_RD_MODES | SNOR_EON_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST,  SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(8, 0, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP,SNOR_PROTO_1_1_1),
+
+};
+
+static const struct spi_nor_flash_parameter esmt_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST,  SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(8, 0, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP]	= SNOR_OP_PROGRAMS(SPINOR_OP_PP,SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4,SNOR_PROTO_1_1_4),
+
+	.quad_enable         = macronix_quad_enable,
+
+};
+
+
+static const struct spi_nor_flash_parameter paragon_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_PARAGON_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST,   SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2,  SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(8, 0, SPINOR_OP_READ_1_2_2,  SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4,  SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4, SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP]	= SNOR_OP_PROGRAMS(SPINOR_OP_PP,SNOR_PROTO_1_1_1),
+
+	.quad_enable         = spansion_quad_enable,
+
+};
+
+static const struct spi_nor_flash_parameter gd_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(8, 0, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+	.quad_enable         = gd_quad_enable,
+
+};
+
+static const struct spi_nor_flash_parameter winbond_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(8, 0, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+	.quad_enable         = spansion_quad_enable,
+
+};
+
+static const struct spi_nor_flash_parameter spansion_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+	.quad_enable         = spansion_quad_enable,
+
+};
+
+
+static const struct spi_nor_flash_parameter mxic_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_MXIC_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(8, 16, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_4_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_4_4, SNOR_PROTO_1_4_4),
+
+	.quad_enable         = macronix_quad_enable,
+
+};
+
+static const struct spi_nor_flash_parameter xmc_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(0, 24, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+};
+
+static const struct spi_nor_flash_parameter micron_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(8, 8, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(1, 7, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(0, 40, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+};
+
+static const struct spi_nor_flash_parameter micron_4k_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(1, 7, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(1, 7, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(1, 9, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+};
+
+static const struct spi_nor_flash_parameter xtx_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]	= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]  = SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4] = SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4] = SNOR_OP_READ(0, 24, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+	.quad_enable       = xtx_quad_enable,
+
+};
+
+static const struct spi_nor_flash_parameter puya_params = {
+	.hwcaps.mask		= SNOR_RD_MODES | SNOR_WR_MODES,
+
+	.reads[SNOR_CMD_READ]= SNOR_OP_READ(0, 0, SPINOR_OP_READ, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_FAST]= SNOR_OP_READ(0, 8, SPINOR_OP_READ_FAST, SNOR_PROTO_1_1_1),
+	.reads[SNOR_CMD_READ_1_1_2]= SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_2, SNOR_PROTO_1_1_2),
+	.reads[SNOR_CMD_READ_1_2_2]= SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_2_2, SNOR_PROTO_1_2_2),
+	.reads[SNOR_CMD_READ_1_1_4]= SNOR_OP_READ(0, 8, SPINOR_OP_READ_1_1_4, SNOR_PROTO_1_1_4),
+	.reads[SNOR_CMD_READ_1_4_4]= SNOR_OP_READ(0, 24, SPINOR_OP_READ_1_4_4,SNOR_PROTO_1_4_4),
+
+	.page_programs[SNOR_CMD_PP] = SNOR_OP_PROGRAMS(SPINOR_OP_PP, SNOR_PROTO_1_1_1),
+	.page_programs[SNOR_CMD_PP_1_1_4] = SNOR_OP_PROGRAMS(SPINOR_OP_PP_1_1_4, SNOR_PROTO_1_1_4),
+
+	.quad_enable         = puya_quad_enable,
+};
+
+#define PARAMS(_name) .params = &_name##_params
+
+/* Different from spi-max-frequency in DTS, the clk here stands for the clock
+ * rate on SPI interface, it is half of the FMC CRG configuration */
+#define CLK_MHZ_2X(clk)  .clkrate = (clk * 2000000),
+#define SPI_NOR_IDS_VER     "1.2"
+#endif /*CONFIG_ARCH_BSP*/
+
 /* Used when the "_ext_id" is two bytes at most */
 #define INFO(_jedec_id, _ext_id, _sector_size, _n_sectors, _flags)	\
 		.id = {							\
@@ -971,6 +1287,13 @@ static int macronix_quad_enable(struct spi_nor *nor);
  * For historical (and compatibility) reasons (before we got above config) some
  * old entries may be missing 4K flag.
  */
+
+/******************************************************************************
+ * We do not guarantee the compatibility of the following device models in the
+ * table.Device compatibility is based solely on the list of compatible devices
+ * in the release package.
+ ******************************************************************************/
+
 static const struct flash_info spi_nor_ids[] = {
 	/* Atmel -- some are (confusingly) marketed as "DataFlash" */
 	{ "at25fs010",  INFO(0x1f6601, 0, 32 * 1024,   4, SECT_4K) },
@@ -991,9 +1314,18 @@ static const struct flash_info spi_nor_ids[] = {
 	/* EON -- en25xxx */
 	{ "en25f32",    INFO(0x1c3116, 0, 64 * 1024,   64, SECT_4K) },
 	{ "en25p32",    INFO(0x1c2016, 0, 64 * 1024,   64, 0) },
+#ifdef CONFIG_ARCH_BSP
+	{ "en25q32b",   INFO(0x1c3016, 0, 64 * 1024,   64,
+			SPI_NOR_QUAD_READ) PARAMS(eon), CLK_MHZ_2X(104) },
+	{ "en25q64",    INFO(0x1c3017, 0, 64 * 1024,  128,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(eon), CLK_MHZ_2X(104) },
+	{ "en25qh64a",    INFO(0x1c7017, 0, 64 * 1024,  128,
+			SPI_NOR_QUAD_READ) PARAMS(eon), CLK_MHZ_2X(104) },
+#else
 	{ "en25q32b",   INFO(0x1c3016, 0, 64 * 1024,   64, 0) },
-	{ "en25p64",    INFO(0x1c2017, 0, 64 * 1024,  128, 0) },
 	{ "en25q64",    INFO(0x1c3017, 0, 64 * 1024,  128, SECT_4K) },
+#endif /* CONFIG_ARCH_BSP */
+	{ "en25p64",    INFO(0x1c2017, 0, 64 * 1024,  128, 0) },
 	{ "en25qh32",   INFO(0x1c7016, 0, 64 * 1024,   64, 0) },
 	{ "en25qh128",  INFO(0x1c7018, 0, 64 * 1024,  256, 0) },
 	{ "en25qh256",  INFO(0x1c7019, 0, 64 * 1024,  512, 0) },
@@ -1013,7 +1345,24 @@ static const struct flash_info spi_nor_ids[] = {
 	/* Fujitsu */
 	{ "mb85rs1mt", INFO(0x047f27, 0, 128 * 1024, 1, SPI_NOR_NO_ERASE) },
 
-	/* GigaDevice */
+	/* GigaDevice 3.3V */
+#ifdef CONFIG_ARCH_BSP
+	{ "gd25q16c", INFO(0xc84015, 0, 64 * 1024, 32,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(120) },
+	{ "gd25q32", INFO(0xc84016, 0, 64 * 1024,  64,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(120) },
+	{ "gd25q64", INFO(0xc84017, 0, 64 * 1024, 128,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(120) },
+	{ "gd25q128/gd25q127", INFO(0xc84018, 0, 64 * 1024, 256,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(80) },
+	/* GigaDevice 1.8V */
+	{ "gd25lq16c", INFO(0xc86015, 0, 64 * 1024, 32,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(104) },
+	{ "gd25lq64", INFO(0xc86017, 0, 64 * 1024, 128,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(133) },
+	{ "gd25lq128", INFO(0xc86018, 0, 64 * 1024, 256,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(gd), CLK_MHZ_2X(133) },
+#else
 	{
 		"gd25q16", INFO(0xc84015, 0, 64 * 1024,  32,
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
@@ -1021,11 +1370,6 @@ static const struct flash_info spi_nor_ids[] = {
 	},
 	{
 		"gd25q32", INFO(0xc84016, 0, 64 * 1024,  64,
-			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
-			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
-	},
-	{
-		"gd25lq32", INFO(0xc86016, 0, 64 * 1024, 64,
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
 			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
 	},
@@ -1041,6 +1385,12 @@ static const struct flash_info spi_nor_ids[] = {
 	},
 	{
 		"gd25q128", INFO(0xc84018, 0, 64 * 1024, 256,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
+	},
+#endif /* CONFIG_ARCH_BSP */
+	{
+		"gd25lq32", INFO(0xc86016, 0, 64 * 1024, 64,
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
 			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
 	},
@@ -1073,44 +1423,108 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "is25wp128",  INFO(0x9d7018, 0, 64 * 1024, 256,
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 
-	/* Macronix */
+	/* Macronix/MXIC 3.3V */
 	{ "mx25l512e",   INFO(0xc22010, 0, 64 * 1024,   1, SECT_4K) },
 	{ "mx25l2005a",  INFO(0xc22012, 0, 64 * 1024,   4, SECT_4K) },
 	{ "mx25l4005a",  INFO(0xc22013, 0, 64 * 1024,   8, SECT_4K) },
 	{ "mx25l8005",   INFO(0xc22014, 0, 64 * 1024,  16, 0) },
-	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K) },
 	{ "mx25l3205d",  INFO(0xc22016, 0, 64 * 1024,  64, SECT_4K) },
 	{ "mx25l3255e",  INFO(0xc29e16, 0, 64 * 1024,  64, SECT_4K) },
-	{ "mx25l6405d",  INFO(0xc22017, 0, 64 * 1024, 128, SECT_4K) },
 	{ "mx25u2033e",  INFO(0xc22532, 0, 64 * 1024,   4, SECT_4K) },
 	{ "mx25u4035",   INFO(0xc22533, 0, 64 * 1024,   8, SECT_4K) },
 	{ "mx25u8035",   INFO(0xc22534, 0, 64 * 1024,  16, SECT_4K) },
-	{ "mx25u6435f",  INFO(0xc22537, 0, 64 * 1024, 128, SECT_4K) },
-	{ "mx25l12805d", INFO(0xc22018, 0, 64 * 1024, 256, 0) },
 	{ "mx25l12855e", INFO(0xc22618, 0, 64 * 1024, 256, 0) },
-	{ "mx25l25635e", INFO(0xc22019, 0, 64 * 1024, 512, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "mx25u25635f", INFO(0xc22539, 0, 64 * 1024, 512, SECT_4K | SPI_NOR_4B_OPCODES) },
 	{ "mx25l25655e", INFO(0xc22619, 0, 64 * 1024, 512, 0) },
-	{ "mx66l51235l", INFO(0xc2201a, 0, 64 * 1024, 1024, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) },
-	{ "mx66u51235f", INFO(0xc2253a, 0, 64 * 1024, 1024, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) },
 	{ "mx66l1g45g",  INFO(0xc2201b, 0, 64 * 1024, 2048, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
-	{ "mx66l1g55g",  INFO(0xc2261b, 0, 64 * 1024, 2048, SPI_NOR_QUAD_READ) },
+	{ "mx66l1g55g",  INFO(0xc2261b, 0, 64 * 1024, 2048, SPI_NOR_QUAD_READ)},
 
-	/* Micron */
+
+#ifdef CONFIG_ARCH_BSP
+	/* MXIC 3.3V MX25L6436FM2I-08G/MX25L6433FM2I-08G */
+	{ "mx25l64XXfm2i-08g",  INFO(0xc22017, 0, 64 * 1024, 128,
+			SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(133) },
+	{ "mx25l12835f", INFO(0xc22018, 0, 64 * 1024, 256,
+			SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(84) },
+	{ "mx25l25635f", INFO(0xc22019, 0, 64 * 1024, 512,
+			SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) PARAMS(mxic), CLK_MHZ_2X(84) },
+	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K
+			| SPI_NOR_DUAL_READ) CLK_MHZ_2X(80) },
+	{ "mx25v1635f",  INFO(0xc22315, 0, 64 * 1024, 32 ,
+			SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(80) },
+	/* Macronix/MXIC Wide Voltage Range 1.65~3.6V */
+	{ "mx25r6435f",  INFO(0xc22817, 0, 64 * 1024, 128,
+			SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) CLK_MHZ_2X(80) },
+	/* Macronix/MXIC 1.8V */
+	{ "mx25u1633f",  INFO(0xc22535, 0, 64 * 1024, 32,
+			SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(80) },
+	{ "mx25u6435f",  INFO(0xc22537, 0, 64 * 1024, 128,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(84) },
+	{ "mx25u12835f/mx25u12832f", INFO(0xc22538, 0, 64 * 1024, 256,
+			SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(84) },
+	{ "mx25u51245g", INFO(0xc2253a, 0, 64 * 1024, 1024,
+			SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) PARAMS(mxic), CLK_MHZ_2X(166) },
+	{ "mx66l51235l/mx25l51245g", INFO(0xc2201a, 0, 64 * 1024, 1024,
+			SPI_NOR_QUAD_READ) PARAMS(mxic), CLK_MHZ_2X(133)},
+	{ "mx66u1g45gm", INFO(0xc2253b, 0, 64 * 1024, 2048,
+			SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) PARAMS(mxic), CLK_MHZ_2X(133) },
+#else
+	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K) },
+	{ "mx25l6405d",  INFO(0xc22017, 0, 64 * 1024, 128, SECT_4K) },
+	{ "mx25u6435f",  INFO(0xc22537, 0, 64 * 1024, 128, SECT_4K) },
+	{ "mx25l12805d", INFO(0xc22018, 0, 64 * 1024, 256, 0) },
+	{ "mx25l25635e", INFO(0xc22019, 0, 64 * 1024, 512, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+	{ "mx66u51235f", INFO(0xc2253a, 0, 64 * 1024, 1024, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) },
+	{ "mx66l51235l", INFO(0xc2201a, 0, 64 * 1024, 1024, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) },
+#endif /* CONFIG_ARCH_BSP */
+
+	/* Micron 3.3V */
 	{ "n25q016a",	 INFO(0x20bb15, 0, 64 * 1024,   32, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q032",	 INFO(0x20ba16, 0, 64 * 1024,   64, SPI_NOR_QUAD_READ) },
+#ifdef CONFIG_ARCH_BSP
+	{ "n25q128a13",  INFO(0x20ba18, 0, 64 * 1024,  256, SPI_NOR_QUAD_READ)
+			PARAMS(micron), CLK_MHZ_2X(108) },
+ 	{ "mt25ql256a",  INFO(0x20ba19, 0x1044, 64 * 1024,  512, SPI_NOR_QUAD_READ)
+			PARAMS(micron), CLK_MHZ_2X(108) },
+	/* Micron 1.8V */
+	{ "n25q032a",    INFO(0x20bb16, 0, 64 * 1024,   64, SPI_NOR_QUAD_READ)
+			PARAMS(micron), CLK_MHZ_2X(108) },
+	{ "n25q064a",    INFO(0x20bb17, 0, 64 * 1024,  128, SPI_NOR_QUAD_READ)
+			PARAMS(micron), CLK_MHZ_2X(108) },
+	{ "mt25qu128a/n25q128a11",  INFO(0x20bb18, 0, 64 * 1024,  256, SPI_NOR_QUAD_READ)
+			PARAMS(micron), CLK_MHZ_2X(108) },
+	{ "mt25qu256a",  INFO(0x20bb19, 0, 64 * 1024,  512,
+			SPI_NOR_4B_OPCODES | SPI_NOR_QUAD_READ) PARAMS(micron), CLK_MHZ_2X(108) },
+	{ "n25q512a",    INFO(0x20bb20, 0, 64 * 1024, 1024, USE_FSR | SPI_NOR_QUAD_READ)
+			PARAMS(micron_4k), CLK_MHZ_2X(80) },
+#else
 	{ "n25q032a",	 INFO(0x20bb16, 0, 64 * 1024,   64, SPI_NOR_QUAD_READ) },
-	{ "n25q064",     INFO(0x20ba17, 0, 64 * 1024,  128, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q064a",    INFO(0x20bb17, 0, 64 * 1024,  128, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q128a11",  INFO(0x20bb18, 0, 64 * 1024,  256, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q128a13",  INFO(0x20ba18, 0, 64 * 1024,  256, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q256a",    INFO(0x20ba19, 0, 64 * 1024,  512, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "n25q256ax1",  INFO(0x20bb19, 0, 64 * 1024,  512, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q512a",    INFO(0x20bb20, 0, 64 * 1024, 1024, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ) },
+#endif /* CONFIG_ARCH_BSP */
+	{ "n25q064",     INFO(0x20ba17, 0, 64 * 1024,  128, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q512ax3",  INFO(0x20ba20, 0, 64 * 1024, 1024, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ) },
 	{ "n25q00",      INFO(0x20ba21, 0, 64 * 1024, 2048, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE) },
 	{ "n25q00a",     INFO(0x20bb21, 0, 64 * 1024, 2048, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE) },
 	{ "mt25qu02g",   INFO(0x20bb22, 0, 64 * 1024, 4096, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE) },
+
+#ifdef CONFIG_ARCH_BSP
+	/* XMC */
+	{ "xm25qh64a",    INFO(0x207017, 0, 64 * 1024,   128, SPI_NOR_QUAD_READ)
+			PARAMS(xmc), CLK_MHZ_2X(104) },
+	{ "xm25qh64b",    INFO(0x206017, 0, 64 * 1024,   128, SPI_NOR_QUAD_READ)
+			PARAMS(xmc), CLK_MHZ_2X(104) },
+	{ "xm25qh128a",   INFO(0x207018, 0, 64 * 1024,   256, SPI_NOR_QUAD_READ)
+			PARAMS(xmc), CLK_MHZ_2X(104) },
+	{ "xm25qh128b",   INFO(0x206018, 0, 64 * 1024,   256, SPI_NOR_QUAD_READ)
+			PARAMS(xmc), CLK_MHZ_2X(104) },
+	{ "xm25qh128chiq",   INFO(0x204018, 0, 64 * 1024,   256, SPI_NOR_QUAD_READ)
+			PARAMS(xmc), CLK_MHZ_2X(133) },
+#endif /* CONFIG_ARCH_BSP */
 
 	/* PMC */
 	{ "pm25lv512",   INFO(0,        0, 32 * 1024,    2, SECT_4K_PMC) },
@@ -1122,8 +1536,14 @@ static const struct flash_info spi_nor_ids[] = {
 	 */
 	{ "s25sl032p",  INFO(0x010215, 0x4d00,  64 * 1024,  64, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "s25sl064p",  INFO(0x010216, 0x4d00,  64 * 1024, 128, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+#ifdef CONFIG_ARCH_BSP
+	{ "s25fl256s0", INFO(0x010219, 0x4d00, 256 * 1024, 128, 0) },
+	{ "s25fl256s1", INFO(0x010219, 0x4d01,  64 * 1024, 512,
+			 SPI_NOR_4B_OPCODES | SPI_NOR_QUAD_READ) PARAMS(spansion), CLK_MHZ_2X(104) },
+#else
 	{ "s25fl256s0", INFO(0x010219, 0x4d00, 256 * 1024, 128, USE_CLSR) },
 	{ "s25fl256s1", INFO(0x010219, 0x4d01,  64 * 1024, 512, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | USE_CLSR) },
+#endif /* CONFIG_ARCH_BSP */
 	{ "s25fl512s",  INFO(0x010220, 0x4d00, 256 * 1024, 256, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | USE_CLSR) },
 	{ "s70fl01gs",  INFO(0x010221, 0x4d00, 256 * 1024, 256, 0) },
 	{ "s25sl12800", INFO(0x012018, 0x0300, 256 * 1024,  64, 0) },
@@ -1200,7 +1620,7 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "m25px64",    INFO(0x207117,  0, 64 * 1024, 128, 0) },
 	{ "m25px80",    INFO(0x207114,  0, 64 * 1024, 16, 0) },
 
-	/* Winbond -- w25x "blocks" are 64K, "sectors" are 4KiB */
+	/* Winbond 3.3V-- w25x "blocks" are 64K, "sectors" are 4KiB */
 	{ "w25x05", INFO(0xef3010, 0, 64 * 1024,  1,  SECT_4K) },
 	{ "w25x10", INFO(0xef3011, 0, 64 * 1024,  2,  SECT_4K) },
 	{ "w25x20", INFO(0xef3012, 0, 64 * 1024,  4,  SECT_4K) },
@@ -1216,18 +1636,45 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "w25q20cl", INFO(0xef4012, 0, 64 * 1024,  4, SECT_4K) },
 	{ "w25q20bw", INFO(0xef5012, 0, 64 * 1024,  4, SECT_4K) },
 	{ "w25q20ew", INFO(0xef6012, 0, 64 * 1024,  4, SECT_4K) },
+#ifdef CONFIG_ARCH_BSP
+	{ "w25q32", INFO(0xef4016, 0, 64 * 1024,  64,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q64fv(spi)/w25q64jv_iq", INFO(0xef4017, 0, 64 * 1024, 128,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q128(b/f)v", INFO(0xef4018, 0, 64 * 1024, 256,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(winbond), CLK_MHZ_2X(104) },
+  	{ "w25q128jv_im", INFO(0xef7018, 0, 64 * 1024, 256,
+			SECT_4K | SPI_NOR_QUAD_READ) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q256", INFO(0xef4019, 0, 64 * 1024, 512,
+			SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q01jvzeiq", INFO(0xef4021, 0, 64 * 1024, 2048,
+			SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) PARAMS(winbond), CLK_MHZ_2X(90) },
+
+	/* Winbond 1.8V */
+	{ "w25q32fw", INFO(0xef6016, 0, 64 * 1024,  64,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q64dw", INFO(0xef6017, 0, 64 * 1024, 128,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q128fw", INFO(0xef6018, 0, 64 * 1024, 256,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB) PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q256jw-im", INFO(0xef8019, 0, 64 * 1024, 512,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB | SPI_NOR_4B_OPCODES)
+			PARAMS(winbond), CLK_MHZ_2X(80) },
+	{ "w25q256jw-iq", INFO(0xef6019, 0, 64 * 1024, 512,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB | SPI_NOR_4B_OPCODES)
+			PARAMS(winbond), CLK_MHZ_2X(133) },
+#else
 	{ "w25q32", INFO(0xef4016, 0, 64 * 1024,  64, SECT_4K) },
 	{
 		"w25q32dw", INFO(0xef6016, 0, 64 * 1024,  64,
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
 			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
 	},
-	{
-		"w25q32jv", INFO(0xef7016, 0, 64 * 1024,  64,
-			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
-			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
-	},
-	{ "w25x64", INFO(0xef3017, 0, 64 * 1024, 128, SECT_4K) },
 	{ "w25q64", INFO(0xef4017, 0, 64 * 1024, 128, SECT_4K) },
 	{
 		"w25q64dw", INFO(0xef6017, 0, 64 * 1024, 128,
@@ -1239,12 +1686,20 @@ static const struct flash_info spi_nor_ids[] = {
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
 			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
 	},
-	{ "w25q80", INFO(0xef5014, 0, 64 * 1024,  16, SECT_4K) },
-	{ "w25q80bl", INFO(0xef4014, 0, 64 * 1024,  16, SECT_4K) },
+	/* winbond W25Q128JVEAQ 3.3v */
 	{ "w25q128", INFO(0xef4018, 0, 64 * 1024, 256, SECT_4K) },
 	{ "w25q256", INFO(0xef4019, 0, 64 * 1024, 512, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+#endif /* CONFIG_ARCH_BSP */
+	{ "w25q80", INFO(0xef5014, 0, 64 * 1024,  16, SECT_4K) },
+	{ "w25q80bl", INFO(0xef4014, 0, 64 * 1024,  16, SECT_4K) },
 	{ "w25m512jv", INFO(0xef7119, 0, 64 * 1024, 1024,
 			SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ) },
+	{
+		"w25q32jv", INFO(0xef7016, 0, 64 * 1024,  64,
+			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
+	},
+	{ "w25x64", INFO(0xef3017, 0, 64 * 1024, 128, SECT_4K) },
 
 	/* Catalyst / On Semiconductor -- non-JEDEC */
 	{ "cat25c11", CAT25_INFO(  16, 8, 16, 1, SPI_NOR_NO_ERASE | SPI_NOR_NO_FR) },
@@ -1263,6 +1718,41 @@ static const struct flash_info spi_nor_ids[] = {
 	/* XMC (Wuhan Xinxin Semiconductor Manufacturing Corp.) */
 	{ "XM25QH64A", INFO(0x207017, 0, 64 * 1024, 128, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "XM25QH128A", INFO(0x207018, 0, 64 * 1024, 256, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+
+#ifdef CONFIG_ARCH_BSP
+	/* Paragon 3.3V */
+	{ "pn25f16s", INFO(0xe04015, 0, 64 * 1024,  32,
+			SPI_NOR_QUAD_READ) PARAMS(paragon), CLK_MHZ_2X(80) },
+	{ "pn25f32s", INFO(0xe04016, 0, 64 * 1024,  64,
+			SPI_NOR_QUAD_READ) PARAMS(paragon), CLK_MHZ_2X(80) },
+
+	/* XTX */
+	{ "xt25f128b", INFO(0x0b4018, 0, 64 * 1024,  256,
+		SPI_NOR_QUAD_READ) PARAMS(xtx), CLK_MHZ_2X(70) },
+	{ "xt25f64b", INFO(0x0b4017, 0, 64 * 1024,  128,
+		SPI_NOR_QUAD_READ) PARAMS(xtx), CLK_MHZ_2X(70) },
+	{ "xt25f32bssigu-s", INFO(0x0b4016, 0, 64 * 1024,  64,
+		SPI_NOR_QUAD_READ) PARAMS(xtx), CLK_MHZ_2X(108) },
+	{ "xt25f16bssigu", INFO(0x0b4015, 0, 64 * 1024,  32,
+		SPI_NOR_QUAD_READ) PARAMS(xtx), CLK_MHZ_2X(120) },
+
+	/*puya 3.3V */
+	{"p25q128h", INFO(0x856018, 0, 64 * 1024, 256,
+		SPI_NOR_QUAD_READ) PARAMS(puya), CLK_MHZ_2X(104) },
+
+	/* FM 3.3v */
+	{ "FM25Q64-SOB-T-G",INFO(0xa14017, 0, 64 * 1024, 128,
+		SPI_NOR_QUAD_READ) PARAMS(spansion), CLK_MHZ_2X(80) },
+	{ "FM25Q128-SOB-T-G",INFO(0xa14018, 0, 64 * 1024, 256,
+		SPI_NOR_QUAD_READ) PARAMS(spansion), CLK_MHZ_2X(80) },
+
+	{ "H25S64",INFO(0x684017, 0, 64 * 1024, 128,
+		SPI_NOR_QUAD_READ) PARAMS(spansion), CLK_MHZ_2X(80) },
+	{ "H25S128",INFO(0x684018, 0, 64 * 1024, 256,
+		SPI_NOR_QUAD_READ) PARAMS(spansion), CLK_MHZ_2X(80) },
+	{ "ZB25VQ64A",INFO(0x5e4017, 0, 64 * 1024, 128,
+		SPI_NOR_QUAD_READ) PARAMS(spansion), CLK_MHZ_2X(104) },
+#endif /* CONFIG_ARCH_BSP */
 	{ },
 };
 
@@ -1277,6 +1767,13 @@ static const struct flash_info *spi_nor_read_id(struct spi_nor *nor)
 		dev_dbg(nor->dev, "error %d reading JEDEC ID\n", tmp);
 		return ERR_PTR(tmp);
 	}
+
+#ifdef CONFIG_ARCH_BSP
+	if ((id[0] == 0xff) || (id[0] == 0x00)) {
+		dev_err(nor->dev, "unrecognized Manufacturer ID\n");
+		return ERR_PTR(-ENODEV);
+	}
+#endif /* CONFIG_ARCH_BSP */
 
 	for (tmp = 0; tmp < ARRAY_SIZE(spi_nor_ids) - 1; tmp++) {
 		info = &spi_nor_ids[tmp];
@@ -1426,6 +1923,13 @@ static int spi_nor_write(struct mtd_info *mtd, loff_t to, size_t len,
 	ret = spi_nor_lock_and_prep(nor, SPI_NOR_OPS_WRITE);
 	if (ret)
 		return ret;
+#ifdef CONFIG_BSP_SPI_BLOCK_PROTECT
+	if (nor->level && (to < nor->end_addr)) {
+		dev_err(nor->dev, "Error: The DMA write area was locked\n");
+		spi_nor_unlock_and_unprep(nor, SPI_NOR_OPS_WRITE);
+		return -EINVAL;
+	}
+#endif
 
 	for (i = 0; i < len; ) {
 		ssize_t written;
@@ -1571,6 +2075,19 @@ static int spansion_quad_enable(struct spi_nor *nor)
 {
 	u8 sr_cr[2] = {0, CR_QUAD_EN_SPAN};
 	int ret;
+#ifdef CONFIG_ARCH_BSP
+	unsigned int regval = 0;
+
+	regval = read_cr(nor);
+	if ((unsigned int)regval & CR_QUAD_EN_SPAN)
+		return 0;
+
+	/* Update the Quad Enable bit. */
+	dev_dbg(nor->dev, "setting Quad Enable (non-volatile) bit\n");
+	sr_cr[1] = (regval & 0xff) | CR_QUAD_EN_SPAN;
+	regval = read_sr(nor);
+	sr_cr[0] = regval & 0xff;
+#endif /*CONFIG_ARCH_BSP*/
 
 	ret = write_sr_cr(nor, sr_cr);
 	if (ret)
@@ -1578,13 +2095,403 @@ static int spansion_quad_enable(struct spi_nor *nor)
 
 	/* read back and check it */
 	ret = read_cr(nor);
-	if (!(ret > 0 && (ret & CR_QUAD_EN_SPAN))) {
+	if (!(ret > 0 && ((unsigned int)ret & CR_QUAD_EN_SPAN))) {
 		dev_err(nor->dev, "Spansion Quad bit not set\n");
 		return -EINVAL;
 	}
 
 	return 0;
 }
+
+
+#ifdef CONFIG_ARCH_BSP
+static int xtx_quad_enable(struct spi_nor *nor)
+{
+	u8 ret, val_h,val_l;
+	/* read SR high 8bit*/
+	val_h = read_cr(nor);
+	if (val_h < 0)
+		return val_h;
+
+	if (val_h & SR_QUAD_EN_XTX)
+		return 0;
+
+	/* Update the Quad Enable bit. */
+	dev_dbg(nor->dev, "setting xtx Quad Enable (non-volatile) bit\n");
+
+	write_enable(nor);
+
+	/* read SR low 8bit*/
+	val_l = read_sr(nor);
+
+	/* write SR */
+	nor->cmd_buf[0] = val_l;
+	nor->cmd_buf[1] = val_h;
+	nor->write_reg(nor, SPINOR_OP_WRSR, nor->cmd_buf, 2);
+
+	if (spi_nor_wait_till_ready(nor))
+		return 1;
+
+	ret = read_cr(nor);
+	if (!(ret > 0 && (ret & SR_QUAD_EN_XTX))) {
+		dev_err(nor->dev, "xtx Quad bit not set\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int micron_quad_enable(struct spi_nor *nor)
+{
+	int ret;
+	u8 val;
+
+	ret = nor->read_reg(nor, SPINOR_OP_RD_EVCR, &val, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error %d reading EVCR\n", ret);
+		return ret;
+	}
+
+	write_enable(nor);
+
+	/* set EVCR, enable quad I/O */
+	nor->cmd_buf[0] = val & ~EVCR_QUAD_EN_MICRON;
+	ret = nor->write_reg(nor, SPINOR_OP_WD_EVCR, nor->cmd_buf, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error while writing EVCR register\n");
+		return ret;
+	}
+
+	ret = spi_nor_wait_till_ready(nor);
+	if (ret)
+		return ret;
+
+	/* read EVCR and check it */
+	ret = nor->read_reg(nor, SPINOR_OP_RD_EVCR, &val, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error %d reading EVCR\n", ret);
+		return ret;
+	}
+	if (val & EVCR_QUAD_EN_MICRON) {
+		dev_err(nor->dev, "Micron EVCR Quad bit not clear\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int gd_quad_enable(struct spi_nor *nor)
+{
+	u8 sr_cr[2] = {0};
+	unsigned int regval = 0;
+	int ret;
+	u16 val;
+
+	/* First, Quad Enable for 16-Pin GD flash, use WRSR[01h] cmd */
+	regval = read_cr(nor);
+	val = ((regval & 0xff) | CR_QUAD_EN_SPAN) << 8;
+
+	regval = read_sr(nor);
+	val |= (regval & 0xff);
+
+	write_enable(nor);
+	sr_cr[0] = val & 0xff;
+	sr_cr[1] = val >> 8;
+
+	ret = write_sr_cr(nor, sr_cr);
+	if (ret < 0) {
+		dev_err(nor->dev,
+			"error while writing config and status register\n");
+		return -EINVAL;
+	}
+
+	if (spi_nor_wait_till_ready(nor))
+		return 1;
+
+	/* read back and check it */
+	regval = read_cr(nor);
+	if (regval & CR_QUAD_EN_SPAN)
+		return 0;
+
+	/* Second, Quad Enable for 8-Pin GD flash, use WRCR[31h] cmd */
+	regval = read_sr(nor);
+	if (!(regval & SR_WEL))
+		write_enable(nor);
+
+	regval = read_cr(nor);
+	nor->cmd_buf[0] = (regval & 0xff) | CR_QUAD_EN_SPAN;
+
+	ret = nor->write_reg(nor, SPINOR_OP_WRCR, nor->cmd_buf, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error while writing config register\n");
+		return ret;
+	}
+
+	if (spi_nor_wait_till_ready(nor))
+		return 1;
+
+	/* read back and check it */
+	regval = read_cr(nor);
+	if (!(regval > 0 && (regval & CR_QUAD_EN_SPAN))) {
+		dev_err(nor->dev, "GigaDevice Quad bit not set\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int puya_quad_enable(struct spi_nor *nor)
+{
+	int ret;
+	u8 val;
+
+	ret = read_cr(nor);
+	if ((unsigned int)ret & CR_QUAD_EN_SPAN)
+		return 0;
+
+	val = (((unsigned int)ret & 0xff) | CR_QUAD_EN_SPAN);
+	write_enable(nor);
+
+	nor->cmd_buf[0] = val;
+	ret = nor->write_reg(nor, SPINOR_OP_WRCR, nor->cmd_buf, 1);
+	if (ret < 0) {
+		dev_err(nor->dev,
+			"error while writing status register-2\n");
+		return -EINVAL;
+	}
+
+	if (spi_nor_wait_till_ready(nor))
+		return 1;
+
+	/* read back and check it */
+	ret = read_cr(nor);
+	if ((unsigned int)ret & CR_QUAD_EN_SPAN)
+		return 0;
+	else
+		return 1;
+}
+
+#ifdef CONFIG_BSP_SPI_BLOCK_PROTECT
+static void spi_lock_update_address(struct spi_nor *nor, const struct flash_info *info)
+{
+	unsigned int lock_level_max, sectorsize, chipsize;
+
+	if (!nor->level) {
+		nor->end_addr = 0;
+		dev_warn(nor->dev, "all blocks is unlocked.\n");
+		return;
+	}
+
+	sectorsize = info->sector_size;
+	chipsize = sectorsize * info->n_sectors;
+	lock_level_max = nor->lock_level_max;
+
+	switch (JEDEC_MFR(info)) {
+	case SNOR_MFR_MACRONIX:
+		if (chipsize == _2M) {
+			if ((nor->level != lock_level_max)
+					&& (nor->level != 1))
+				nor->end_addr = chipsize - (sectorsize <<
+					(lock_level_max - nor->level - 1));
+			else
+				nor->end_addr = chipsize;
+			return;
+		}
+
+		if (chipsize != _8M)
+			break;
+	case SNOR_MFR_ESMT:
+		/* this case is for ESMT and MXIC 8M devices */
+		if (nor->level != lock_level_max)
+			nor->end_addr = chipsize - (sectorsize
+					<< (lock_level_max - nor->level));
+		else
+			nor->end_addr = chipsize;
+		return;
+	case SNOR_MFR_EON:
+		if (nor->level != lock_level_max)
+			nor->end_addr = chipsize - (sectorsize
+					<< (nor->level - 1));
+		else
+			nor->end_addr = chipsize;
+		return;
+	default:
+		break;
+	}
+
+	/* general case */
+	nor->end_addr = chipsize >> (lock_level_max - nor->level);
+}
+
+static unsigned char bsp_bp_to_level(struct spi_nor *nor,
+		const struct flash_info *info, unsigned int bp_num)
+{
+	int ret;
+	unsigned char val;
+	unsigned char level;
+	unsigned int chipsize;
+
+	ret = spi_nor_wait_till_ready(nor);
+	BUG_ON(ret);
+
+	ret = nor->read_reg(nor, SPINOR_OP_RDSR, &val, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error %d reading SR\n", ret);
+		return ret;
+	}
+
+	if (bp_num == BP_NUM_3)
+		level = (val & SPI_NOR_SR_BP_MASK_3) >> SPI_NOR_SR_BP0_SHIFT;
+	else
+		level = (val & SPI_NOR_SR_BP_MASK_4) >> SPI_NOR_SR_BP0_SHIFT;
+
+	dev_dbg(nor->dev, "the current level[%d]\n", level);
+
+	if (bp_num == BP_NUM_4) {
+		/* 9-15:(256 blocks, protected all) */
+		nor->lock_level_max = LOCK_LEVEL_MAX(bp_num) - 5; /* level 10 = 16 - 5*/
+		chipsize = info->sector_size * info->n_sectors;
+		if ((JEDEC_MFR(info) == SNOR_MFR_MACRONIX)
+				&& (chipsize == _16M))
+			nor->lock_level_max--;
+	} else {
+		nor->lock_level_max = LOCK_LEVEL_MAX(bp_num);
+	}
+	dev_dbg(nor->dev, "Get the max bp level: [%d]\n",
+	   nor->lock_level_max);
+
+	return level;
+}
+
+static void bsp_get_spi_lock_info(struct spi_nor *nor, const struct flash_info *info)
+{
+	unsigned int chipsize;
+	struct device *dev = nor->dev;
+
+	chipsize = info->sector_size * info->n_sectors;
+
+	/* read the BP bit in RDSR to check whether nor is lock or not */
+	switch (JEDEC_MFR(info)) {
+	case SNOR_MFR_GD:
+	case SNOR_MFR_ESMT:
+	case SNOR_MFR_EON:
+	case SNOR_MFR_SPANSION:
+		/* BP bit convert to lock level */
+		nor->level = bsp_bp_to_level(nor, info, BP_NUM_3);
+		break;
+	case SNOR_MFR_WINBOND:
+		/* BP bit convert to lock level */
+		if (chipsize <= _16M)
+			nor->level = bsp_bp_to_level(nor, info, BP_NUM_3);
+		else
+			nor->level = bsp_bp_to_level(nor, info, BP_NUM_4);
+		break;
+	case SNOR_MFR_MACRONIX:
+		/* BP bit convert to lock level */
+		if (chipsize <= _8M)
+			nor->level = bsp_bp_to_level(nor, info, BP_NUM_3);
+		else
+			nor->level = bsp_bp_to_level(nor, info, BP_NUM_4);
+		break;
+	default:
+		goto usage;
+	}
+
+	spi_lock_update_address(nor, info);
+	if (nor->end_addr)
+		dev_info(dev, "Address range [0 => %#x] is locked.\n",
+		nor->end_addr);
+	return;
+usage:
+	dev_err(dev, "The ID: %#x isn't in the BP table,"
+			" Current device can't not protect\n",
+			JEDEC_MFR(info));
+}
+#endif/* CONFIG_BSP_SPI_BLOCK_PROTECT */
+
+static int spi_nor_sr3_to_reset(struct spi_nor *nor)
+{
+	int ret;
+	unsigned char val;
+
+	ret = nor->read_reg(nor, SPINOR_OP_RDSR3, &val, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error %d reading Status Reg 3.\n", ret);
+		return ret;
+	}
+
+	if (SPI_NOR_GET_RST(val)) {
+		dev_dbg(nor->dev, "Device has worked on RESET#.\n");
+		return 0;
+	}
+
+	dev_dbg(nor->dev, "Start to enable RESET# function.\n");
+	val = SPI_NOR_SET_RST(val);
+
+	nor->write_reg(nor, SPINOR_OP_WRSR3, &val, 1);
+	if (ret < 0) {
+		dev_err(nor->dev, "error while writing Status Reg 3.\n");
+		return ret;
+	}
+
+	dev_dbg(nor->dev, "Enable RESET# function success.\n");
+
+	return 0;
+}
+
+static int spi_nor_reset_pin_enable(struct spi_nor *nor,
+		const struct flash_info *info)
+{
+	switch (JEDEC_MFR(info)) {
+	case SNOR_MFR_WINBOND:
+	case SNOR_MFR_GD:
+		return spi_nor_sr3_to_reset(nor);
+	default:
+		return 0;
+	}
+}
+
+static int spi_nor_clear_dtr_mode(struct spi_nor *nor,const struct flash_info *info)
+{
+	int ret = 0;
+	unsigned char cval = 0;
+	unsigned char val = 0;
+
+	if (JEDEC_MFR(info) == SNOR_MFR_MACRONIX){
+		val = read_sr(nor);
+		if (val < 0)
+			return val;
+
+		/* read Configuration Register for macronix's spi nor flash */
+		ret = nor->read_reg(nor, SPINOR_OP_RDSR3, &cval, 1);
+		if(ret < 0){
+			dev_err(nor->dev, "error %d reading config Reg.\n", ret);
+			return ret;
+		}
+
+		/* check the bit[6:7] whether is set in uboot when use DTR mode;if it was set and clear it. */
+		/* pay attention to sequence of issuing WRSR instruction */
+		if (cval & CR_DUMMY_CYCLE){
+			write_enable(nor);
+			nor->cmd_buf[0]=val;
+			nor->cmd_buf[1]=(cval & (~CR_DUMMY_CYCLE));
+			ret = nor->write_reg(nor, SPINOR_OP_WRSR, nor->cmd_buf, 2);
+		}
+	}
+
+	return ret;
+}
+
+static int bsp_spi_nor_init_params(const struct flash_info *info,
+				    struct spi_nor_flash_parameter *params)
+{
+	memcpy(params, info->params, sizeof(*params));
+	params->size = info->sector_size * info->n_sectors;
+	params->page_size = info->page_size;
+
+	return 0;
+}
+#endif /*CONFIG_ARCH_BSP*/
 
 /**
  * spansion_no_read_cr_quad_enable() - set QE bit in Configuration Register.
@@ -1772,6 +2679,7 @@ static int s3an_nor_scan(const struct flash_info *info, struct spi_nor *nor)
 	return 0;
 }
 
+#ifndef CONFIG_ARCH_BSP
 struct spi_nor_read_command {
 	u8			num_mode_clocks;
 	u8			num_wait_states;
@@ -1836,6 +2744,7 @@ struct spi_nor_flash_parameter {
 
 	int (*quad_enable)(struct spi_nor *nor);
 };
+#endif /*CONFIG_ARCH_BSP*/
 
 static void
 spi_nor_set_read_settings(struct spi_nor_read_command *read,
@@ -1935,7 +2844,7 @@ static int spi_nor_read_sfdp_dma_unsafe(struct spi_nor *nor, u32 addr,
 	dma_safe_buf = kmalloc(len, GFP_KERNEL);
 	if (!dma_safe_buf)
 		return -ENOMEM;
-
+	memset(dma_safe_buf, 0, len);
 	ret = spi_nor_read_sfdp(nor, addr, len, dma_safe_buf);
 	memcpy(buf, dma_safe_buf, len);
 	kfree(dma_safe_buf);
@@ -2401,7 +3310,7 @@ static int spi_nor_parse_sfdp(struct spi_nor *nor,
 		param_headers = kmalloc(psize, GFP_KERNEL);
 		if (!param_headers)
 			return -ENOMEM;
-
+		memset(param_headers, 0, psize);
 		err = spi_nor_read_sfdp(nor, sizeof(header),
 					psize, param_headers);
 		if (err < 0) {
@@ -2498,11 +3407,28 @@ static int spi_nor_init_params(struct spi_nor *nor,
 	if (params->hwcaps.mask & (SNOR_HWCAPS_READ_QUAD |
 				   SNOR_HWCAPS_PP_QUAD)) {
 		switch (JEDEC_MFR(info)) {
+#ifdef CONFIG_ARCH_BSP
+		case SNOR_MFR_ESMT:
+#endif
 		case SNOR_MFR_MACRONIX:
 			params->quad_enable = macronix_quad_enable;
 			break;
 
 		case SNOR_MFR_MICRON:
+#ifdef CONFIG_ARCH_BSP
+			params->quad_enable = micron_quad_enable;
+			break;
+
+		case SNOR_MFR_GD:
+			params->quad_enable = gd_quad_enable;
+			break;
+
+		case SNOR_MFR_XTX:
+			params->quad_enable = xtx_quad_enable;
+
+		case SNOR_MFR_PUYA:
+			params->quad_enable = puya_quad_enable;
+#endif
 			break;
 
 		default:
@@ -2601,7 +3527,7 @@ static int spi_nor_select_read(struct spi_nor *nor,
 	if (best_match < 0)
 		return -EINVAL;
 
-	cmd = spi_nor_hwcaps_read2cmd(BIT(best_match));
+	cmd = spi_nor_hwcaps_read2cmd(BIT((unsigned int)best_match));
 	if (cmd < 0)
 		return -EINVAL;
 
@@ -2727,6 +3653,22 @@ static int spi_nor_setup(struct spi_nor *nor, const struct flash_info *info,
 	else
 		nor->quad_enable = NULL;
 
+#ifdef CONFIG_ARCH_BSP
+	err = spi_nor_clear_dtr_mode(nor, info);
+	if (err) {
+		dev_err(nor->dev, "Clear Dtr Mode Fail.\n");
+		return err;
+	}
+
+	if (!(hwcaps->mask & (SNOR_HWCAPS_READ_1_1_4 | SNOR_HWCAPS_READ_1_4_4))) {
+		err = spi_nor_reset_pin_enable(nor, info);
+		if (err) {
+			dev_err(nor->dev, "Enable RESET# Fail.\n");
+			return err;
+		}
+	}
+#endif
+
 	return 0;
 }
 
@@ -2797,10 +3739,83 @@ void spi_nor_restore(struct spi_nor *nor)
 }
 EXPORT_SYMBOL_GPL(spi_nor_restore);
 
+#ifdef CONFIG_ARCH_BSP
+/******************************************************************************/
+void spi_nor_driver_shutdown(struct spi_nor *nor)
+{
+	/* disable 4-byte addressing if the device exceeds 16MiB */
+	if (nor->addr_width == 4) {
+		const struct flash_info *info = NULL;
+
+		info = spi_nor_read_id(nor);
+		set_4byte(nor, info, 0);
+	}
+	return;
+}
+
+#ifdef CONFIG_PM
+/******************************************************************************/
+int spi_nor_suspend(struct spi_nor *nor, pm_message_t state)
+{
+	return spi_nor_wait_till_ready(nor);
+}
+
+/******************************************************************************/
+int bsp_spi_nor_resume(struct spi_nor *nor)
+{
+	int ret;
+	const struct flash_info *info = NULL;
+	struct spi_nor_flash_parameter params;
+	struct spi_nor_hwcaps hwcaps = {
+		.mask = SNOR_HWCAPS_READ |
+			SNOR_HWCAPS_READ_FAST |
+			SNOR_HWCAPS_READ_1_1_2 |
+#ifdef CONFIG_ARCH_BSP
+			SNOR_HWCAPS_READ_1_2_2 |
+#else
+
+			SNOR_HWCAPS_READ_1_1_4 |
+#endif
+			SNOR_HWCAPS_PP,
+	};
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+	hwcaps.mask |= SNOR_HWCAPS_READ_1_1_4 |
+		SNOR_HWCAPS_READ_1_4_4 |
+		SNOR_HWCAPS_PP_1_1_4 |
+		SNOR_HWCAPS_PP_1_4_4;
+#endif
+
+	if (!info)
+		info = spi_nor_read_id(nor);
+
+	/* Quad mode takes precedence over fast/normal */
+	if (info->params)
+	{
+		bsp_spi_nor_init_params(info, &params);
+	}else
+	{
+		ret = spi_nor_init_params(nor, info, &params);
+		if (ret)
+			return ret;
+	}
+	ret = spi_nor_setup(nor, info, &params, &hwcaps);
+	if (ret)
+		return ret;
+
+	/* enable 4-byte addressing if the device exceeds 16MiB */
+	if (nor->addr_width == 4 && JEDEC_MFR(info) != SNOR_MFR_SPANSION)
+		set_4byte(nor, info, 1);
+
+	return 0;
+}
+#endif /* End of CONFIG_PM */
+#endif /* CONFIG_ARCH_BSP */
+
 int spi_nor_scan(struct spi_nor *nor, const char *name,
 		 const struct spi_nor_hwcaps *hwcaps)
 {
 	struct spi_nor_flash_parameter params;
+
 	const struct flash_info *info = NULL;
 	struct device *dev = nor->dev;
 	struct mtd_info *mtd = &nor->mtd;
@@ -2812,7 +3827,7 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	if (ret)
 		return ret;
 
-	/* Reset SPI protocol for all commands. */
+	/* Reset SPI protocol for all commands */
 	nor->reg_proto = SNOR_PROTO_1_1_1;
 	nor->read_proto = SNOR_PROTO_1_1_1;
 	nor->write_proto = SNOR_PROTO_1_1_1;
@@ -2820,8 +3835,11 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	if (name)
 		info = spi_nor_match_id(name);
 	/* Try to auto-detect if chip name wasn't specified or not found */
-	if (!info)
+	if (!info) {
+		dev_info(dev, "SPI Nor ID Table Version %s\n", SPI_NOR_IDS_VER);
 		info = spi_nor_read_id(nor);
+	}
+
 	if (IS_ERR_OR_NULL(info))
 		return -ENOENT;
 
@@ -2859,10 +3877,22 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	if (info->flags & SPI_S3AN)
 		nor->flags |=  SNOR_F_READY_XSR_RDY;
 
-	/* Parse the Serial Flash Discoverable Parameters table. */
-	ret = spi_nor_init_params(nor, info, &params);
-	if (ret)
-		return ret;
+#ifdef CONFIG_BSP_SPI_BLOCK_PROTECT
+	/* NOR block protection support */
+	bsp_get_spi_lock_info(nor, info);
+#endif /* CONFIG_BSP_SPI_BLOCK_PROTECT */
+#ifdef CONFIG_ARCH_BSP
+	if (info->params)
+	{
+		bsp_spi_nor_init_params(info, &params);
+	}else
+#endif /* CONFIG_ARCH_BSP */
+	{
+		/* Parse the Serial Flash Discoverable Parameters table. */
+		ret = spi_nor_init_params(nor, info, &params);
+		if (ret)
+			return ret;
+	}
 
 	if (!mtd->name)
 		mtd->name = dev_name(dev);
@@ -2877,7 +3907,10 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 
 	/* NOR protection support for STmicro/Micron chips and similar */
 	if (JEDEC_MFR(info) == SNOR_MFR_MICRON ||
-			info->flags & SPI_NOR_HAS_LOCK) {
+#ifdef CONFIG_ARCH_BSP
+	    JEDEC_MFR(info) == SNOR_MFR_WINBOND ||
+#endif /* CONFIG_ARCH_BSP */
+		info->flags & SPI_NOR_HAS_LOCK) {
 		nor->flash_lock = stm_lock;
 		nor->flash_unlock = stm_unlock;
 		nor->flash_is_locked = stm_is_locked;
@@ -2924,7 +3957,6 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 
 	if (of_property_read_bool(np, "broken-flash-reset"))
 		nor->flags |= SNOR_F_BROKEN_RESET;
-
 	/* Some devices cannot do fast-read, no matter what DT tells us */
 	if (info->flags & SPI_NOR_NO_FR)
 		params.hwcaps.mask &= ~SNOR_HWCAPS_READ_FAST;
@@ -2953,6 +3985,16 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	} else {
 		nor->addr_width = 3;
 	}
+
+#ifdef CONFIG_ARCH_BSP
+	/* choose the suitable clockrate */
+	if ((info->flags & (SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ)) /* device supports dual or quad */
+		&& (hwcaps->mask & (~SNOR_HWCAPS_READ)) /* controller supports fast mode */
+		&& info->clkrate)
+		nor->clkrate = info->clkrate;
+	else
+		nor->clkrate = 24000000;
+#endif /* CONFIG_ARCH_BSP */
 
 	if (nor->addr_width > SPI_NOR_MAX_ADDR_WIDTH) {
 		dev_err(dev, "address width is too large: %u\n",

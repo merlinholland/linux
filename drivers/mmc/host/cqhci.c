@@ -53,6 +53,11 @@ static inline u8 *get_link_desc(struct cqhci_host *cq_host, u8 tag)
 
 static inline dma_addr_t get_trans_desc_dma(struct cqhci_host *cq_host, u8 tag)
 {
+	if (cq_host->quirks & CQHCI_QUIRK_TXFR_DESC_SZ_SPLIT)
+		return cq_host->trans_desc_dma_base +
+		(cq_host->mmc->max_segs * tag * 2 *
+		 cq_host->trans_desc_len);
+
 	return cq_host->trans_desc_dma_base +
 		(cq_host->mmc->max_segs * tag *
 		 cq_host->trans_desc_len);
@@ -60,6 +65,11 @@ static inline dma_addr_t get_trans_desc_dma(struct cqhci_host *cq_host, u8 tag)
 
 static inline u8 *get_trans_desc(struct cqhci_host *cq_host, u8 tag)
 {
+	if (cq_host->quirks & CQHCI_QUIRK_TXFR_DESC_SZ_SPLIT)
+		return cq_host->trans_desc_base +
+			(cq_host->trans_desc_len *
+			 cq_host->mmc->max_segs * 2 * tag);
+
 	return cq_host->trans_desc_base +
 		(cq_host->trans_desc_len * cq_host->mmc->max_segs * tag);
 }
@@ -200,8 +210,12 @@ static int cqhci_host_alloc_tdl(struct cqhci_host *cq_host)
 
 	cq_host->desc_size = cq_host->slot_sz * cq_host->num_slots;
 
-	cq_host->data_size = cq_host->trans_desc_len * cq_host->mmc->max_segs *
-		cq_host->mmc->cqe_qdepth;
+	if (cq_host->quirks & CQHCI_QUIRK_TXFR_DESC_SZ_SPLIT)
+		cq_host->data_size = cq_host->trans_desc_len *
+			cq_host->mmc->max_segs * 2 * cq_host->mmc->cqe_qdepth;
+	else
+		cq_host->data_size = cq_host->trans_desc_len *
+			cq_host->mmc->max_segs * cq_host->mmc->cqe_qdepth;
 
 	pr_debug("%s: cqhci: desc_size: %zu data_sz: %zu slot-sz: %d\n",
 		 mmc_hostname(cq_host->mmc), cq_host->desc_size, cq_host->data_size,
@@ -274,13 +288,13 @@ static void __cqhci_enable(struct cqhci_host *cq_host)
 
 	cqhci_writel(cq_host, cq_host->rca, CQHCI_SSC2);
 
+	cqhci_writel(cq_host, SEND_QSR_INTERVAL, CQHCI_SSC1);
+
 	cqhci_set_irqs(cq_host, 0);
 
 	cqcfg |= CQHCI_ENABLE;
 
 	cqhci_writel(cq_host, cqcfg, CQHCI_CFG);
-
-	mmc->cqe_on = true;
 
 	if (cq_host->ops->enable)
 		cq_host->ops->enable(mmc);
@@ -301,21 +315,19 @@ static void __cqhci_disable(struct cqhci_host *cq_host)
 	cqcfg &= ~CQHCI_ENABLE;
 	cqhci_writel(cq_host, cqcfg, CQHCI_CFG);
 
-	cq_host->mmc->cqe_on = false;
-
 	cq_host->activated = false;
 }
 
-int cqhci_suspend(struct mmc_host *mmc)
+int cqhci_deactivate(struct mmc_host *mmc)
 {
 	struct cqhci_host *cq_host = mmc->cqe_private;
 
-	if (cq_host->enabled)
+	if (cq_host->enabled && cq_host->activated)
 		__cqhci_disable(cq_host);
 
 	return 0;
 }
-EXPORT_SYMBOL(cqhci_suspend);
+EXPORT_SYMBOL(cqhci_deactivate);
 
 int cqhci_resume(struct mmc_host *mmc)
 {
@@ -380,6 +392,8 @@ static void cqhci_off(struct mmc_host *mmc)
 		pr_debug("%s: cqhci: CQE off\n", mmc_hostname(mmc));
 
 	mmc->cqe_on = false;
+
+	cqhci_deactivate(mmc);
 }
 
 static void cqhci_disable(struct mmc_host *mmc)
@@ -449,7 +463,7 @@ static int cqhci_dma_map(struct mmc_host *host, struct mmc_request *mrq)
 	return sg_count;
 }
 
-static void cqhci_set_tran_desc(u8 *desc, dma_addr_t addr, int len, bool end,
+static void _cqhci_set_tran_desc(u8 *desc, dma_addr_t addr, int len, bool end,
 				bool dma64)
 {
 	__le32 *attr = (__le32 __force *)desc;
@@ -469,6 +483,27 @@ static void cqhci_set_tran_desc(u8 *desc, dma_addr_t addr, int len, bool end,
 
 		dataddr[0] = cpu_to_le32(addr);
 	}
+}
+
+static void cqhci_set_tran_desc(struct cqhci_host *cq_host, u8 **desc,
+		dma_addr_t addr, int len, bool end, bool dma64, unsigned int blksz)
+{
+	int desc_len;
+
+	if (cq_host->quirks & CQHCI_QUIRK_TXFR_DESC_SZ_SPLIT &&
+		addr % SYNOPSYS_DMA_LIMIT + len > SYNOPSYS_DMA_LIMIT) {
+		if ((addr + (unsigned int)len) % SYNOPSYS_DMA_LIMIT < blksz)
+			BUG_ON(1);
+
+		desc_len = (SYNOPSYS_DMA_LIMIT - addr % SYNOPSYS_DMA_LIMIT);
+		_cqhci_set_tran_desc(*desc, addr, desc_len, false, dma64);
+
+		*desc = *desc + cq_host->trans_desc_len;
+		len -= desc_len;
+		addr += desc_len;
+	}
+
+	_cqhci_set_tran_desc(*desc, addr, len, end, dma64);
 }
 
 static int cqhci_prep_tran_desc(struct mmc_request *mrq,
@@ -497,7 +532,7 @@ static int cqhci_prep_tran_desc(struct mmc_request *mrq,
 
 		if ((i+1) == sg_count)
 			end = true;
-		cqhci_set_tran_desc(desc, addr, len, end, dma64);
+		cqhci_set_tran_desc(cq_host, &desc, addr, len, end, dma64, data->blksz);
 		desc += cq_host->trans_desc_len;
 	}
 
@@ -943,6 +978,9 @@ static void cqhci_recovery_start(struct mmc_host *mmc)
 		cq_host->ops->disable(mmc, true);
 
 	mmc->cqe_on = false;
+
+	cqhci_deactivate(mmc);
+
 }
 
 static int cqhci_error_from_flags(unsigned int flags)

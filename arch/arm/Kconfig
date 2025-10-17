@@ -330,7 +330,7 @@ config ARCH_MULTIPLATFORM
 	depends on MMU
 	select ARM_HAS_SG_CHAIN
 	select ARM_PATCH_PHYS_VIRT
-	select AUTO_ZRELADDR
+	#select AUTO_ZRELADDR
 	select TIMER_OF
 	select COMMON_CLK
 	select GENERIC_CLOCKEVENTS
@@ -748,6 +748,8 @@ source "arch/arm/mach-gemini/Kconfig"
 source "arch/arm/mach-highbank/Kconfig"
 
 source "arch/arm/mach-hisi/Kconfig"
+
+source "arch/arm/mach-bsp/Kconfig"
 
 source "arch/arm/mach-imx/Kconfig"
 

@@ -312,6 +312,20 @@ config K3_DMA
 	  Support the DMA engine for Hisilicon K3 platform
 	  devices.
 
+config EDMACV310
+	tristate "Vendor EDMAC Controller support"
+	depends on ARCH_BSP
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+	help
+		The Direction Memory Access(EDMA) is a high-speed data transfer
+		operation. It supports data read/write between peripherals and
+		memories without using the CPU.
+		Vendor EDMA Controller(EDMAC) directly transfers data between
+		a memory and a peripheral, between peripherals, or between memories.
+		This avoids the CPU intervention and reduces the interrupt handling
+		overhead of the CPU.
+
 config LPC18XX_DMAMUX
 	bool "NXP LPC18xx/43xx DMA MUX for PL080"
 	depends on ARCH_LPC18XX || COMPILE_TEST
@@ -618,7 +632,6 @@ config ZX_DMA
 	select DMA_VIRTUAL_CHANNELS
 	help
 	  Support the DMA engine for ZTE ZX family platform devices.
-
 
 # driver files
 source "drivers/dma/bestcomm/Kconfig"

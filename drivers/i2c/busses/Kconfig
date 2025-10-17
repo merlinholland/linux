@@ -593,6 +593,16 @@ config I2C_GPIO_FAULT_INJECTOR
 	  faults to an I2C bus, so another bus master can be stress-tested.
 	  This is for debugging. If unsure, say 'no'.
 
+config I2C_BSP
+	tristate "Vendor I2C Controller"
+	depends on ARCH_BSP
+	help
+	  Say Y here to include support for Vendor I2C controller in the
+	  Vendor SoCs.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called i2c-bsp.
+	  
 config I2C_HIGHLANDER
 	tristate "Highlander FPGA SMBus interface"
 	depends on SH_HIGHLANDER
@@ -1360,4 +1370,20 @@ config I2C_FSI
 	  This driver can also be built as a module. If so, the module will be
 	  called as i2c-fsi.
 
+config DMA_MSG_MIN_LEN
+	int "Vendor I2C support DMA minimum LEN"
+	depends on I2C_BSP
+	range 1 4090
+	default 5
+	help
+		The i2c_msg minimum LEN of i2c support DMA,range from 1 to 4091
+
+config DMA_MSG_MAX_LEN
+	int "Vendor I2C support DMA maximum LEN"
+	depends on I2C_BSP
+	range DMA_MSG_MIN_LEN 4090
+	default 4090
+	help
+		The i2c_msg maximum LEN of i2c support DMA,range from i2c_msg minimum LEN to 4090,
+		because DMA for 0xFFC one-time  largest data transfers;
 endmenu

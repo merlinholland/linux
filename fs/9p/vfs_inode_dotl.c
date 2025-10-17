@@ -474,6 +474,7 @@ v9fs_vfs_getattr_dotl(const struct path *path, struct kstat *stat,
 		 u32 request_mask, unsigned int flags)
 {
 	struct dentry *dentry = path->dentry;
+	struct inode *inode = d_inode(dentry);
 	struct v9fs_session_info *v9ses;
 	struct p9_fid *fid;
 	struct p9_stat_dotl *st;
@@ -481,7 +482,7 @@ v9fs_vfs_getattr_dotl(const struct path *path, struct kstat *stat,
 	p9_debug(P9_DEBUG_VFS, "dentry: %p\n", dentry);
 	v9ses = v9fs_dentry2v9ses(dentry);
 	if (v9ses->cache == CACHE_LOOSE || v9ses->cache == CACHE_FSCACHE) {
-		generic_fillattr(d_inode(dentry), stat);
+		generic_fillattr(inode, stat);
 		return 0;
 	}
 	fid = v9fs_fid_lookup(dentry);
@@ -496,8 +497,10 @@ v9fs_vfs_getattr_dotl(const struct path *path, struct kstat *stat,
 	if (IS_ERR(st))
 		return PTR_ERR(st);
 
-	v9fs_stat2inode_dotl(st, d_inode(dentry), 0);
-	generic_fillattr(d_inode(dentry), stat);
+	spin_lock(&inode->i_lock);
+	v9fs_stat2inode_dotl(st, inode);
+	spin_unlock(&inode->i_lock);
+	generic_fillattr(inode, stat);
 	/* Change block size to what the server returned */
 	stat->blksize = st->st_blksize;
 

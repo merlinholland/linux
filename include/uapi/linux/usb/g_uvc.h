@@ -34,6 +34,23 @@ struct uvc_event {
 	};
 };
 
+#if IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC)
+/*-------------------------------------------------------------------------*/
+struct uvc_pack {
+	uint64_t   buf_vir_addr;
+	uint32_t   buf_size;
+	uint64_t   pack_vir_addr;
+	uint32_t   pack_len;
+	void       *private_data;
+
+	void       (*callback_func)(void *);
+	bool       is_frame_end;
+};
+
+extern int uvc_recv_pack(struct uvc_pack *pack);
+#endif /* IS_ENABLED(CONFIG_MPP_TO_GADGET_UVC) */
+
+/*-------------------------------------------------------------------------*/
 #define UVCIOC_SEND_RESPONSE		_IOW('U', 1, struct uvc_request_data)
 
 #endif /* __LINUX_USB_G_UVC_H */

@@ -37,6 +37,11 @@ static DEFINE_PER_CPU(atomic64_t, active_asids);
 static DEFINE_PER_CPU(u64, reserved_asids);
 static cpumask_t tlb_flush_pending;
 
+#ifdef CONFIG_IOMMU_SVA
+static unsigned long max_pinned_asids;
+static unsigned long nr_pinned_asids;
+static unsigned long *pinned_asid_map;
+#endif
 #define ASID_MASK		(~GENMASK(asid_bits - 1, 0))
 #define ASID_FIRST_VERSION	(1UL << asid_bits)
 
@@ -88,13 +93,21 @@ void verify_cpu_asid_bits(void)
 	}
 }
 
+#ifdef CONFIG_IOMMU_SVA
+#define asid_gen_match(asid) \
+	(!(((asid) ^ atomic64_read(&asid_generation)) >> asid_bits))
+#endif
 static void flush_context(unsigned int cpu)
 {
 	int i;
 	u64 asid;
 
 	/* Update the list of reserved ASIDs and the ASID bitmap. */
+#ifndef CONFIG_IOMMU_SVA
 	bitmap_clear(asid_map, 0, NUM_USER_ASIDS);
+#else
+	bitmap_copy(asid_map, pinned_asid_map, NUM_USER_ASIDS);
+#endif
 
 	for_each_possible_cpu(i) {
 		asid = atomic64_xchg_relaxed(&per_cpu(active_asids, i), 0);
@@ -157,6 +170,10 @@ static u64 new_context(struct mm_struct *mm, unsigned int cpu)
 		 */
 		if (check_update_reserved_asid(asid, newasid))
 			return newasid;
+#ifdef CONFIG_IOMMU_SVA
+		if (mm->context.pinned)
+			return newasid;
+#endif
 
 		/*
 		 * We had a valid ASID in a previous life, so try to re-use
@@ -245,6 +262,46 @@ switch_mm_fastpath:
 		cpu_switch_mm(mm->pgd, mm);
 }
 
+#ifdef CONFIG_IOMMU_SVA
+unsigned long mm_context_get(struct mm_struct *mm)
+{
+	unsigned long flags;
+	u64 asid;
+	raw_spin_lock_irqsave(&cpu_asid_lock, flags);
+	asid = atomic64_read(&mm->context.id);
+	if (mm->context.pinned) {
+		mm->context.pinned++;
+		asid &= ~ASID_MASK;
+		goto out_unlock;
+	}
+	if (nr_pinned_asids >= max_pinned_asids) {
+		asid = 0;
+		goto out_unlock;
+	}
+	if (!asid_gen_match(asid)) {
+		asid = new_context(mm, 0);
+		atomic64_set(&mm->context.id, asid);
+	}
+	asid &= ~ASID_MASK;
+	nr_pinned_asids++;
+	__set_bit(asid2idx(asid), pinned_asid_map);
+	mm->context.pinned++;
+out_unlock:
+	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
+	return asid;
+}
+void mm_context_put(struct mm_struct *mm)
+{
+	unsigned long flags;
+	u64 asid = atomic64_read(&mm->context.id) & ~ASID_MASK;
+	raw_spin_lock_irqsave(&cpu_asid_lock, flags);
+	if (--mm->context.pinned == 0) {
+		__clear_bit(asid2idx(asid), pinned_asid_map);
+		nr_pinned_asids--;
+	}
+	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
+}
+#endif
 /* Errata workaround post TTBRx_EL1 update. */
 asmlinkage void post_ttbr_update_workaround(void)
 {
@@ -269,6 +326,14 @@ static int asids_init(void)
 		panic("Failed to allocate bitmap for %lu ASIDs\n",
 		      NUM_USER_ASIDS);
 
+#ifdef CONFIG_IOMMU_SVA
+	pinned_asid_map = kzalloc(BITS_TO_LONGS(NUM_USER_ASIDS)
+					* sizeof(*pinned_asid_map), GFP_KERNEL);
+	if (!pinned_asid_map)
+		panic("Failed to allocate pinned bitmap\n");
+	max_pinned_asids = NUM_USER_ASIDS - num_possible_cpus() - 2;
+	nr_pinned_asids = 0;
+#endif
 	pr_info("ASID allocator initialised with %lu entries\n", NUM_USER_ASIDS);
 	return 0;
 }

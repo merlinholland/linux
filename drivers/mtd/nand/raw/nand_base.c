@@ -47,6 +47,7 @@
 #include <linux/io.h>
 #include <linux/mtd/partitions.h>
 #include <linux/of.h>
+#include "nfc_gen.h"
 
 static int nand_get_device(struct mtd_info *mtd, int new_state);
 
@@ -4409,6 +4410,10 @@ static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
 	int ret;
 	int oob_required = oob ? 1 : 0;
 
+#ifdef CONFIG_ARCH_BSP
+    oob_required = 1;
+#endif
+
 	ops->retlen = 0;
 	if (!writelen)
 		return 0;
@@ -5632,7 +5637,8 @@ static int nand_detect(struct nand_chip *chip, struct nand_flash_dev *type)
 {
 	const struct nand_manufacturer *manufacturer;
 	struct mtd_info *mtd = nand_to_mtd(chip);
-	int busw, ret;
+	int busw = 0;
+	int ret = 0;
 	u8 *id_data = chip->id.data;
 	u8 maf_id, dev_id;
 
@@ -5679,6 +5685,30 @@ static int nand_detect(struct nand_chip *chip, struct nand_flash_dev *type)
 	/* Try to identify manufacturer */
 	manufacturer = nand_get_manufacturer(maf_id);
 	chip->manufacturer.desc = manufacturer;
+
+#ifdef CONFIG_ARCH_BSP
+
+#ifndef CONFIG_MTD_SPI_NAND_BSP
+	/* Parallel Nand Flash */
+
+	/* The 3rd id byte holds MLC / multichip data */
+	chip->bits_per_cell = nand_get_bits_per_cell(id_data[2]);
+#endif
+
+	if (get_spi_nand_flash_type_hook)
+	    type = get_spi_nand_flash_type_hook(mtd, id_data);
+
+	if (type)
+	    goto ident_done;
+#ifdef CONFIG_MTD_SPI_NAND_BSP
+	else {
+	    pr_info("This device[%02x,%02x] cannot found in spi nand id table!!\n",
+		    maf_id, dev_id);
+	    return -ENODEV;
+	}
+#endif
+
+#endif /* endif CONFIG_ARCH_BSP */
 
 	if (!type)
 		type = nand_flash_ids;
@@ -5741,12 +5771,16 @@ static int nand_detect(struct nand_chip *chip, struct nand_flash_dev *type)
 	chip->options |= type->options;
 
 ident_done:
+#ifdef CONFIG_ARCH_BSP
+	nfc_nand_param_adjust(mtd, chip);
+#endif
 	if (!mtd->name)
 		mtd->name = chip->parameters.model;
 
 	if (chip->options & NAND_BUSWIDTH_AUTO) {
 		WARN_ON(busw & NAND_BUSWIDTH_16);
 		nand_set_defaults(chip);
+		printk("NAND_BUSWIDTH_AUTO,line:%d",__LINE__);
 	} else if (busw != (chip->options & NAND_BUSWIDTH_16)) {
 		/*
 		 * Check, if buswidth is correct. Hardware drivers should set
@@ -5796,6 +5830,10 @@ ident_done:
 	pr_info("%d MiB, %s, erase size: %d KiB, page size: %d, OOB size: %d\n",
 		(int)(chip->chipsize >> 20), nand_is_slc(chip) ? "SLC" : "MLC",
 		mtd->erasesize >> 10, mtd->writesize, mtd->oobsize);
+
+	/* Print ecc type and ecc mode about vendor flash controller */
+	nfc_show_info(mtd, nand_manufacturer_name(manufacturer), type->name);
+
 	return 0;
 
 free_detect_allocation:

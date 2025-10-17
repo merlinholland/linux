@@ -965,7 +965,8 @@ static void tcp_internal_pacing(struct sock *sk, const struct sk_buff *skb)
 	u64 len_ns;
 	u32 rate;
 
-	if (!tcp_needs_internal_pacing(sk))
+	if (!tcp_needs_internal_pacing(sk) ||
+	hrtimer_is_queued(&tcp_sk(sk)->pacing_timer))
 		return;
 	rate = sk->sk_pacing_rate;
 	if (!rate || rate == ~0U)
@@ -1293,6 +1294,11 @@ int tcp_fragment(struct sock *sk, enum tcp_queue tcp_queue,
 		     tcp_queue != TCP_FRAG_IN_WRITE_QUEUE &&
 		     skb != tcp_rtx_queue_head(sk) &&
 		     skb != tcp_rtx_queue_tail(sk))) {
+		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPWQUEUETOOBIG);
+		return -ENOMEM;
+	}
+
+	if (unlikely((sk->sk_wmem_queued >> 1) > sk->sk_sndbuf)) {
 		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPWQUEUETOOBIG);
 		return -ENOMEM;
 	}

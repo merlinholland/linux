@@ -33,5 +33,6 @@ obj-$(CONFIG_PCI_ENDPOINT)	+= endpoint/
 
 obj-y				+= controller/
 obj-y				+= switch/
+obj-$(CONFIG_BSP_PCIE) += bsp_pcie/
 
 ccflags-$(CONFIG_PCI_DEBUG) := -DDEBUG

@@ -109,3 +109,12 @@ config SCSI_UFS_HISI
 
 	  Select this if you have UFS controller on Hisilicon chipset.
 	  If unsure, say N.
+
+config SCSI_UFS_SS919V100
+	tristate "SS919V100 specific hooks to UFS controller platform driver"
+	depends on SCSI_UFSHCD_PLATFORM
+	---help---
+	  This selects the UFS support for SS919V100 SoC.
+
+	  Select this if you have UFS controller on SS919V100 chipset.
+	  If unsure, say N.

@@ -29,6 +29,43 @@
 #define SNOR_MFR_SST		CFI_MFR_SST
 #define SNOR_MFR_WINBOND	0xef /* Also used by some Spansion */
 
+#ifdef CONFIG_ARCH_BSP
+#define SNOR_MFR_EON		CFI_MFR_EON
+#define SNOR_MFR_WINBOND	0xef
+#define SNOR_MFR_ESMT		0x8c
+#define SNOR_MFR_GD		0xc8
+#define SNOR_MFR_XTX		0x0b
+#define SNOR_MFR_PUYA		0x85
+
+/* Flash set the RESET# from */
+#define SPI_NOR_SR_RST_MASK	BIT(7)
+#define SPI_NOR_GET_RST(val)	(((val) & SPI_NOR_SR_RST_MASK) >> 7)
+#define SPI_NOR_SET_RST(val)    ((val) | SPI_NOR_SR_RST_MASK)
+
+/* Flash block protect */
+#ifdef CONFIG_BSP_SPI_BLOCK_PROTECT
+#define _2M				(0x200000UL)
+#define _4M				(0x400000UL)
+#define _8M				(0x800000UL)
+#define _16M				(0x1000000UL)
+#define _32M				(0x2000000UL)
+
+#define BP_NUM_3                        3
+#define BP_NUM_4                        4
+
+#define DEBUG_SPI_NOR_BP	0
+
+#define SPI_NOR_SR_BP0_SHIFT    2
+#define SPI_NOR_SR_BP_WIDTH_4   0xf
+#define SPI_NOR_SR_BP_MASK_4    (SPI_NOR_SR_BP_WIDTH_4 << SPI_NOR_SR_BP0_SHIFT)
+
+#define SPI_NOR_SR_BP_WIDTH_3   0x7
+#define SPI_NOR_SR_BP_MASK_3    (SPI_NOR_SR_BP_WIDTH_3 << SPI_NOR_SR_BP0_SHIFT)
+
+#define LOCK_LEVEL_MAX(bp_num)	(((0x01) << bp_num) - 1)
+
+#endif /* CONFIG_BSP_SPI_BLOCK_PROTECT */
+#endif /* CONFIG_ARCH_BSP */
 /*
  * Note on opcode nomenclature: some opcodes have a format like
  * SPINOR_OP_FUNCTION{4,}_x_y_z. The numbers x, y, and z stand for the number
@@ -108,6 +145,17 @@
 
 /* Used for Spansion flashes only. */
 #define SPINOR_OP_BRWR		0x17	/* Bank register write */
+
+#ifdef CONFIG_ARCH_BSP
+#define SPINOR_OP_RDSR3		0x15    /* Read Status Register-3 */
+#define SPINOR_OP_WRSR3		0x11    /* Write Status Register-3 1 byte*/
+/* Used for GigaDevice flashes only. */
+#define SPINOR_OP_WRCR		0x31	/* Config register write */
+/* Software reset code */
+#define CR_DUMMY_CYCLE      (0x03 << 6) /* Macronix dummy cycle bits */
+#define SR_QUAD_EN_XTX      BIT(1)
+#endif
+
 #define SPINOR_OP_CLSR		0x30	/* Clear status register 1 */
 
 /* Used for Micron flashes only. */
@@ -172,6 +220,23 @@
 #define SNOR_PROTO_DTR(_inst_nbits, _addr_nbits, _data_nbits)	\
 	(SNOR_PROTO_IS_DTR |					\
 	 SNOR_PROTO_STR(_inst_nbits, _addr_nbits, _data_nbits))
+
+#ifdef CONFIG_ARCH_BSP
+#define SNOR_OP_READ(_num_mode_clocks, _num_wait_states, _opcode, _proto) \
+	{							  \
+		.num_mode_clocks = _num_mode_clocks,		  \
+		.num_wait_states = _num_wait_states,		  \
+		.opcode = _opcode,				  \
+		.proto = _proto,				  \
+	}
+
+#define SNOR_OP_PROGRAMS(_opcode, _proto) \
+	{							  \
+		.opcode = _opcode,				  \
+		.proto = _proto,				  \
+	}
+
+#endif /* CONFIG_ARCH_BSP */
 
 enum spi_nor_protocol {
 	SNOR_PROTO_1_1_1 = SNOR_PROTO_STR(1, 1, 1),
@@ -314,6 +379,15 @@ struct spi_nor {
 	int (*flash_is_locked)(struct spi_nor *nor, loff_t ofs, uint64_t len);
 	int (*quad_enable)(struct spi_nor *nor);
 
+#ifdef CONFIG_ARCH_BSP
+#ifdef CONFIG_BSP_SPI_BLOCK_PROTECT
+	unsigned int end_addr;
+	unsigned int lock_level_max;
+	unsigned char level;
+#endif
+	struct device_node	*flash_node;
+	u32 clkrate;
+#endif
 	void *priv;
 };
 
@@ -403,6 +477,13 @@ struct spi_nor_hwcaps {
  *
  * Return: 0 for success, others for failure.
  */
+#ifdef CONFIG_ARCH_BSP
+void spi_nor_driver_shutdown(struct spi_nor *nor);
+#ifdef CONFIG_PM
+int spi_nor_suspend(struct spi_nor *nor, pm_message_t state);
+int bsp_spi_nor_resume(struct spi_nor *nor);
+#endif
+#endif /* CONFIG_ARCH_BSP */
 int spi_nor_scan(struct spi_nor *nor, const char *name,
 		 const struct spi_nor_hwcaps *hwcaps);
 

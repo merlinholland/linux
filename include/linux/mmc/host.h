@@ -168,6 +168,7 @@ struct mmc_host_ops {
 	 */
 	int	(*multi_io_quirk)(struct mmc_card *card,
 				  unsigned int direction, int blk_size);
+	int     (*card_info_save)(struct mmc_host *host);
 };
 
 struct mmc_cqe_ops {
@@ -276,6 +277,12 @@ struct mmc_host {
 	unsigned int		f_min;
 	unsigned int		f_max;
 	unsigned int		f_init;
+	unsigned int		type;
+#define MMC_HOST_TYPE_MMC		0		/* MMC card */
+#define MMC_HOST_TYPE_SD		1		/* SD card */
+#define MMC_HOST_TYPE_SDIO		2		/* SDIO card */
+#define MMC_HOST_TYPE_SD_COMBO		3		/* SD combo (IO+mem) card */
+
 	u32			ocr_avail;
 	u32			ocr_avail_sdio;	/* SDIO-specific OCR */
 	u32			ocr_avail_sd;	/* SD-specific OCR */
@@ -416,6 +423,11 @@ struct mmc_host {
 
 	struct delayed_work	detect;
 	int			detect_change;	/* card detect flag */
+	u32			card_status;
+#define MMC_CARD_UNINIT		0
+#define MMC_CARD_INIT		1
+#define MMC_CARD_INIT_FAIL	2
+
 	struct mmc_slot		slot;
 
 	const struct mmc_bus_ops *bus_ops;	/* current bus driver */

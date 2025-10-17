@@ -22,7 +22,7 @@
     MA 02110-1301 USA.							     */
 /* ------------------------------------------------------------------------- */
 
-/* With some changes from Kyösti Mälkki <kmalkki@cc.hut.fi> and
+/* With some changes from Kyosti Malkki <kmalkki@cc.hut.fi> and
    Frodo Looijaard <frodol@dds.nl> */
 
 #ifndef _UAPI_LINUX_I2C_H
@@ -81,6 +81,9 @@ struct i2c_msg {
 #define I2C_M_REV_DIR_ADDR	0x2000	/* if I2C_FUNC_PROTOCOL_MANGLING */
 #define I2C_M_NOSTART		0x4000	/* if I2C_FUNC_NOSTART */
 #define I2C_M_STOP		0x8000	/* if I2C_FUNC_PROTOCOL_MANGLING */
+#define I2C_M_16BIT_REG		0x0002	/* indicate reg bit-width is 16bit */
+#define I2C_M_16BIT_DATA	0x0008	/* indicate data bit-width is 16bit */
+#define I2C_M_DMA		0x0004	/* indicate use dma mode */
 	__u16 len;		/* msg length				*/
 	__u8 *buf;		/* pointer to msg data			*/
 };

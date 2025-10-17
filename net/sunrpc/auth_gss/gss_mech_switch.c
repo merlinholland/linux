@@ -58,9 +58,14 @@ gss_mech_free(struct gss_api_mech *gm)
 {
 	struct pf_desc *pf;
 	int i;
+	struct auth_domain *test;
 
 	for (i = 0; i < gm->gm_pf_num; i++) {
 		pf = &gm->gm_pfs[i];
+		test = auth_domain_find(pf->auth_domain_name);
+		if (test != NULL) {
+			test->flavour->domain_release(test);
+		}
 		kfree(pf->auth_domain_name);
 		pf->auth_domain_name = NULL;
 	}

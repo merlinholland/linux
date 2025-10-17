@@ -88,6 +88,12 @@
 
 /* send status config 1 */
 #define CQHCI_SSC1			0x40
+/*
+ * Value n means CQE would send CMD13 during the transfer of data block
+ * BLOCK_CNT-n
+ */
+#define SEND_QSR_INTERVAL 0x70001
+
 
 /* send status config 2 */
 #define CQHCI_SSC2			0x44
@@ -145,6 +151,7 @@
 #define CQHCI_DAT_ADDR_LO(x)		(((x) & 0xFFFFFFFF) << 32)
 #define CQHCI_DAT_ADDR_HI(x)		(((x) & 0xFFFFFFFF) << 0)
 
+#define SYNOPSYS_DMA_LIMIT		0x8000000
 struct cqhci_host_ops;
 struct mmc_host;
 struct cqhci_slot;
@@ -170,6 +177,7 @@ struct cqhci_host {
 
 	u32 quirks;
 #define CQHCI_QUIRK_SHORT_TXFR_DESC_SZ	0x1
+#define CQHCI_QUIRK_TXFR_DESC_SZ_SPLIT	0x2
 
 	bool enabled;
 	bool halted;
@@ -234,7 +242,11 @@ irqreturn_t cqhci_irq(struct mmc_host *mmc, u32 intmask, int cmd_error,
 		      int data_error);
 int cqhci_init(struct cqhci_host *cq_host, struct mmc_host *mmc, bool dma64);
 struct cqhci_host *cqhci_pltfm_init(struct platform_device *pdev);
-int cqhci_suspend(struct mmc_host *mmc);
+int cqhci_deactivate(struct mmc_host *mmc);
+static inline int cqhci_suspend(struct mmc_host *mmc)
+{
+	return cqhci_deactivate(mmc);
+}
 int cqhci_resume(struct mmc_host *mmc);
 
 #endif

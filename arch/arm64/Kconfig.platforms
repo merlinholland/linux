@@ -97,6 +97,76 @@ config ARCH_HISI
 	help
 	  This enables support for Hisilicon ARMv8 SoC family
 
+config ARCH_BSP
+	bool "Vendor SoC Family"
+	select ARM_TIMER_SP804
+	select PINCTRL
+	help
+	  This enables support for Vendor ARMv8 SoC family
+
+config ARCH_SS528V100
+    bool "SS528V100 family"
+    depends on ARCH_BSP
+	select ARM_TIMER_SP804
+	select PINCTRL
+        help
+          Support for SS528V100 Soc family
+
+
+config ARCH_SS625V100
+    bool "SS625V100 family"
+    depends on ARCH_BSP
+	select ARM_TIMER_SP804
+	select PINCTRL
+        help
+          Support for SS625V100 Soc family
+
+config ARCH_SS919V100
+    bool "SS919V100 family"
+    depends on ARCH_BSP
+	select ARM_TIMER_SP804
+	select PINCTRL
+        help
+          Support for SS919V100 Soc family
+
+config ARCH_SS015V100
+    bool "SS015V100 family"
+    depends on ARCH_BSP
+	select ARM_TIMER_SP804
+	select PINCTRL
+        help
+          Support for SS015V100 Soc family
+
+config ARCH_SS928V100
+    bool "Vendor ss928v100 family"
+    depends on ARCH_BSP
+	select ARM_TIMER_SP804
+	select HISILICON_IRQ_MBIGEN if PCI
+	select PINCTRL
+        help
+          Support for Vendor SS928V100 Soc family
+
+config ARCH_SS927V100
+    bool "Vendor ss927v100 family"
+    depends on ARCH_BSP
+	select ARM_TIMER_SP804
+	select HISILICON_IRQ_MBIGEN if PCI
+	select PINCTRL
+        help
+          Support for Vendor SS927V100 Soc family
+
+config ACCESS_M7_DEV
+    bool "Enable to access the devices of m7"
+    depends on (ARCH_SS919V100 || ARCH_SS015V100)
+    help
+      supprot to access the devices of M7
+
+config ARCH_BSP_AMP
+        bool "Vendor AMP solution"
+        depends on (ARCH_SS919V100 || ARCH_SS015V100)
+        help
+          Support for SS919V100 and SS015V100 AMP
+
 config ARCH_MEDIATEK
 	bool "MediaTek SoC Family"
 	select ARM_GIC

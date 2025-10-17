@@ -15,6 +15,9 @@ extern char * strchr(const char * s, int c);
 
 #define __HAVE_ARCH_MEMCPY
 extern void * memcpy(void *, const void *, __kernel_size_t);
+#ifdef CONFIG_VDMA_V100
+extern void *_memcpy(void *, const void *, __kernel_size_t);
+#endif
 
 #define __HAVE_ARCH_MEMMOVE
 extern void * memmove(void *, const void *, __kernel_size_t);

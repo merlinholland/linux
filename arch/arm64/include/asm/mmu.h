@@ -27,6 +27,9 @@
 
 typedef struct {
 	atomic64_t	id;
+#ifdef CONFIG_IOMMU_SVA
+	unsigned long	pinned;
+#endif
 	void		*vdso;
 	unsigned long	flags;
 } mm_context_t;

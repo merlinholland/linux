@@ -444,7 +444,7 @@ static int mmc_mq_init(struct mmc_queue *mq, struct mmc_card *card,
 	if (ret)
 		return ret;
 
-	blk_queue_rq_timeout(mq->queue, 60 * HZ);
+	blk_queue_rq_timeout(mq->queue, 120 * HZ);
 
 	mmc_setup_queue(mq, card);
 

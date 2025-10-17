@@ -339,6 +339,150 @@ choice
 		  Say Y here if you want kernel low-level debugging support
 		  on HI3620 UART.
 
+	config DEBUG_SS524V100_UART
+		bool "SS524V100 Debug UART"
+		depends on ARCH_SS524V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS524V100 UART.
+
+	config DEBUG_SS615V100_UART
+		bool "SS615V100 Debug UART"
+		depends on ARCH_SS615V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS615V100 UART.
+
+	config DEBUG_SS522V100_UART
+		bool "SS522V100 Debug UART"
+		depends on ARCH_SS522V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS522V100 UART.
+
+	config DEBUG_SS522V101_UART
+		bool "SS522V101 Debug UART"
+		depends on ARCH_SS522V101
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS522V101 UART.
+	config DEBUG_SS812V100_UART
+		bool "SS812V100 Debug UART"
+		depends on ARCH_SS812V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS812V100 UART.
+
+	config DEBUG_SS101V200_UART
+		bool "SS101V200 Debug UART"
+		depends on ARCH_SS101V200
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS101V200 UART.
+
+	config DEBUG_SS101V500_UART
+		bool "SS101V500 Debug UART"
+		depends on ARCH_SS101V500
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS101V500 UART.
+
+	config DEBUG_SS101V300_UART
+		bool "SS101V300 Debug UART"
+		depends on ARCH_SS101V300
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS101V300 UART.
+
+	config DEBUG_SS101V600_UART
+		bool "SS101V600 Debug UART"
+		depends on ARCH_SS101V600
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS101V600 UART.
+
+	config DEBUG_SS813V100_UART
+		bool "SS813V100 Debug UART"
+		depends on ARCH_SS813V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS813V100 UART.
+
+	config DEBUG_SS312V100_UART
+		bool "SS312V100 Debug UART"
+		depends on ARCH_SS312V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS312V100 UART.
+
+	config DEBUG_SS313V100_UART
+		bool "SS313V100 Debug UART"
+		depends on ARCH_SS313V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS313V100 UART.
+
+	config DEBUG_SS011V100_UART
+		bool "SS011V100 Debug UART"
+		depends on ARCH_SS011V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS011V100 UART.
+
+	config DEBUG_SS012V100_UART
+		bool "SS012V100 Debug UART"
+		depends on ARCH_SS012V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS012V100 UART.
+
+	config DEBUG_SS612V100_UART
+		bool "SS612V100 Debug UART"
+		depends on ARCH_SS612V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS612V100 UART.
+
+	config DEBUG_SS318V100_UART
+		bool "SS318V100 Debug UART"
+		depends on ARCH_SS318V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS318V100 UART.
+
+	config DEBUG_SS918V100_UART
+		bool "SS918V100 Debug UART"
+		depends on ARCH_SS918V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS918V100 UART.
+
+	config DEBUG_SS013V100_UART
+		bool "SS013V100 Debug UART"
+		depends on ARCH_SS013V100
+		select DEBUG_UART_PL01X
+		help
+			Say Y here if you want kernel low-level debugging support
+			on SS013V100 UART.
+
+
 	config DEBUG_HIGHBANK_UART
 		bool "Kernel low-level debugging messages via Highbank UART"
 		depends on ARCH_HIGHBANK
@@ -1650,6 +1794,20 @@ config DEBUG_UART_PHYS
 	default 0xf991e000 if DEBUG_QCOM_UARTDM
 	default 0xfc00c000 if DEBUG_AT91_SAMA5D4_USART3
 	default 0xfcb00000 if DEBUG_HI3620_UART
+	default 0x11040000 if DEBUG_SS524V100_UART
+	default 0x11040000 if DEBUG_SS615V100_UART
+	default 0x11040000 if DEBUG_SS522V100_UART
+	default 0x120a0000 if DEBUG_SS812V100_UART
+	default 0x12040000 if DEBUG_SS101V200_UART
+	default 0x12040000 if DEBUG_SS101V500_UART
+	default 0x12040000 if DEBUG_SS101V300_UART
+	default 0x120a0000 if DEBUG_SS813V100_UART
+	default 0x120a0000 if DEBUG_SS312V100_UART
+	default 0x120a0000 if DEBUG_SS313V100_UART
+	default 0x12080000 if DEBUG_SS612V100_UART
+	default 0x04540000 if DEBUG_SS318V100_UART
+	default 0x04540000 if DEBUG_SS918V100_UART
+	default 0x04540000 if DEBUG_SS013V100_UART
 	default 0xfd883000 if DEBUG_ALPINE_UART0
 	default 0xfe800000 if ARCH_IOP32X
 	default 0xff690000 if DEBUG_RK32_UART2
@@ -1757,6 +1915,20 @@ config DEBUG_UART_VIRT
 	default 0xfe300000 if DEBUG_BCM_KONA_UART
 	default 0xfe800000 if ARCH_IOP32X
 	default 0xfeb00000 if DEBUG_HI3620_UART || DEBUG_HIX5HD2_UART
+	default 0xfe440000 if DEBUG_SS524V100_UART
+	default 0xfe440000 if DEBUG_SS615V100_UART
+	default 0xfe440000 if DEBUG_SS522V100_UART
+	default 0xfe4a0000 if DEBUG_SS812V100_UART
+	default 0xfe440000 if DEBUG_SS101V200_UART
+	default 0xfe440000 if DEBUG_SS101V500_UART
+	default 0xfe440000 if DEBUG_SS101V300_UART
+	default 0xfe4a0000 if DEBUG_SS813V100_UART
+	default 0xfe4a0000 if DEBUG_SS312V100_UART
+	default 0xfe4a0000 if DEBUG_SS313V100_UART
+	default 0xfe480000 if DEBUG_SS612V100_UART
+	default 0xfef00000 if DEBUG_SS318V100_UART
+	default 0xfef00000 if DEBUG_SS918V100_UART
+	default 0xfef00000 if DEBUG_SS013V100_UART
 	default 0xfeb24000 if DEBUG_RK3X_UART0
 	default 0xfeb26000 if DEBUG_RK3X_UART1
 	default 0xfeb30c00 if DEBUG_KEYSTONE_UART0
@@ -1847,7 +2019,7 @@ config DEBUG_UNCOMPRESS
 	  When this option is set, the selected DEBUG_LL output method
 	  will be re-used for normal decompressor output on multiplatform
 	  kernels.
-	  
+
 
 config UNCOMPRESS_INCLUDE
 	string

@@ -284,7 +284,7 @@ static u64 get_coherent_dma_mask(struct device *dev)
 	return mask;
 }
 
-static void __dma_clear_buffer(struct page *page, size_t size, int coherent_flag)
+void __dma_clear_buffer(struct page *page, size_t size, int coherent_flag)
 {
 	/*
 	 * Ensure that the allocated pages are zeroed, and that any data
@@ -313,6 +313,7 @@ static void __dma_clear_buffer(struct page *page, size_t size, int coherent_flag
 		}
 	}
 }
+EXPORT_SYMBOL(__dma_clear_buffer);
 
 /*
  * Allocate a DMA buffer for 'dev' of size 'size' using the
@@ -520,6 +521,12 @@ static void __dma_remap(struct page *page, size_t size, pgprot_t prot)
 	apply_to_page_range(&init_mm, start, size, __dma_update_pte, &prot);
 	flush_tlb_kernel_range(start, end);
 }
+
+void bsp_flush_tlb_kernel_range(unsigned long start, unsigned long end)
+{
+	flush_tlb_kernel_range(start, end);
+}
+EXPORT_SYMBOL(bsp_flush_tlb_kernel_range);
 
 static void *__alloc_remap_buffer(struct device *dev, size_t size, gfp_t gfp,
 				 pgprot_t prot, struct page **ret_page,
@@ -2403,3 +2410,10 @@ void arch_teardown_dma_ops(struct device *dev)
 	/* Let arch_setup_dma_ops() start again from scratch upon re-probe */
 	set_dma_ops(dev, NULL);
 }
+
+void bsp_dmac_map_area(const void *kaddr, size_t size,
+			enum dma_data_direction dir)
+{
+	dmac_map_area(kaddr, size, dir);
+}
+EXPORT_SYMBOL(bsp_dmac_map_area);

@@ -237,7 +237,42 @@ static int i2cdev_check_addr(struct i2c_adapter *adapter, unsigned int addr)
 
 	return result;
 }
+static noinline int i2c_config_mul_reg(struct i2c_client *client, unsigned long arg)
+{
+	struct i2c_msg msg;
+	unsigned int reg_width;
+	unsigned int data_width;
+	unsigned int reg_data_width;
 
+	if (copy_from_user(&msg,
+			   (struct i2c_msg __user *)arg,
+			   sizeof(msg)))
+		return -EFAULT;
+
+	if(client->flags & I2C_M_16BIT_REG)
+		reg_width = 2;
+	else
+		reg_width = 1;
+
+	if(client->flags & I2C_M_16BIT_DATA)
+		data_width = 2;
+	else
+		data_width = 1;
+
+	reg_data_width = reg_width + data_width;
+
+	msg.buf = memdup_user(msg.buf,msg.len);
+
+	if(msg.len == 0 || reg_data_width > msg.len || msg.len % reg_data_width != 0){
+		printk(KERN_ERR "msg.len err!!!\n");
+		return -EINVAL;
+	}
+
+	bsp_i2c_master_send_mul_reg(client, msg.buf, msg.len, reg_data_width);
+
+	return 0;
+
+}
 static noinline int i2cdev_ioctl_rdwr(struct i2c_client *client,
 		unsigned nmsgs, struct i2c_msg *msgs)
 {
@@ -485,6 +520,24 @@ static long i2cdev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		 */
 		client->adapter->timeout = msecs_to_jiffies(arg * 10);
 		break;
+	case I2C_CONFIG_FLAGS:
+		if (arg & I2C_M_16BIT_REG)
+			client->flags |= I2C_M_16BIT_REG;
+		else
+			client->flags &= ~I2C_M_16BIT_REG;
+
+		if (arg & I2C_M_16BIT_DATA)
+			client->flags |= I2C_M_16BIT_DATA;
+		else
+			client->flags &= ~I2C_M_16BIT_DATA;
+
+		if (arg & I2C_M_DMA)
+			client->flags |= I2C_M_DMA;
+		else
+			client->flags &= ~I2C_M_DMA;
+		return 0;
+	case I2C_CONFIG_MUL_REG:
+		return i2c_config_mul_reg(client, arg);
 	default:
 		/* NOTE:  returning a fault code here could cause trouble
 		 * in buggy userspace code.  Some old kernel bugs returned

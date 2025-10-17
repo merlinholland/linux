@@ -1369,7 +1369,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	u64 seq;
 	u32 idx;
 
-	text = kmalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
+	text = kzalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
 	if (!text)
 		return -ENOMEM;
 

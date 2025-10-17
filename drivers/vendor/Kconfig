@@ -1,0 +1,5 @@
+menu "Vendor driver support"
+
+source "drivers/vendor/cma/Kconfig"
+source "drivers/vendor/npu/Kconfig"
+endmenu

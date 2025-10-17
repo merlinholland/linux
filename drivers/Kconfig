@@ -193,7 +193,7 @@ source "drivers/ras/Kconfig"
 
 source "drivers/thunderbolt/Kconfig"
 
-source "drivers/android/Kconfig"
+#source "drivers/android/Kconfig"
 
 source "drivers/nvdimm/Kconfig"
 
@@ -218,5 +218,11 @@ source "drivers/visorbus/Kconfig"
 source "drivers/siox/Kconfig"
 
 source "drivers/slimbus/Kconfig"
+
+source "drivers/edmac/Kconfig"
+
+source "drivers/vendor/Kconfig"
+
+source "drivers/vdmav100/Kconfig"
 
 endmenu

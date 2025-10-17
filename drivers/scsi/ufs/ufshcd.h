@@ -71,6 +71,7 @@
 
 #define UFSHCD "ufshcd"
 #define UFSHCD_DRIVER_VERSION "0.2"
+#define UFSCARDHCD "ufscarddetect"
 
 struct ufs_hba;
 
@@ -326,6 +327,7 @@ struct ufs_hba_variant_ops {
 	int     (*resume)(struct ufs_hba *, enum ufs_pm_op);
 	void	(*dbg_register_dump)(struct ufs_hba *hba);
 	int	(*phy_initialization)(struct ufs_hba *);
+	void	(*clk_hareware_init_notify)(void);
 };
 
 /* clock gating state  */
@@ -445,6 +447,20 @@ struct ufs_stats {
 	struct ufs_uic_err_reg_hist nl_err;
 	struct ufs_uic_err_reg_hist tl_err;
 	struct ufs_uic_err_reg_hist dme_err;
+};
+
+/* card status */
+enum ufs_card_status {
+	D_IGNORED = -1,
+	D_NO_DETECT = 0,
+	D_DETECT,
+};
+
+/* card detect handler action */
+enum {
+	H_BREAK = -1,
+	H_REMOVE = 0,
+	H_INSERT,
 };
 
 /**
@@ -639,6 +655,18 @@ struct ufs_hba {
 	struct work_struct eh_work;
 	struct work_struct eeh_work;
 
+#ifdef CONFIG_SCSI_UFS_CARD
+	/* card irq */
+	unsigned int cd_irq;
+	bool is_cd_irq_enabled;
+
+	/* card detect & work queue */
+	int cd_gpio;
+	bool latest_card_status;
+	bool card_status_changed;
+	struct work_struct cd_work;
+	struct workqueue_struct *cd_wq;
+#endif
 	/* HBA Errors */
 	u32 errors;
 	u32 uic_error;
@@ -646,6 +674,7 @@ struct ufs_hba {
 	u32 saved_uic_err;
 	struct ufs_stats ufs_stats;
 
+	uint16_t manufacturer_id;
 	/* Device management request data */
 	struct ufs_dev_cmd dev_cmd;
 	ktime_t last_dme_cmd_tstamp;
@@ -683,6 +712,10 @@ struct ufs_hba {
 	 * CAUTION: Enabling this might reduce overall UFS throughput.
 	 */
 #define UFSHCD_CAP_INTR_AGGR (1 << 4)
+	u32 hc_pwm;
+	u32 hc_gear;
+	u32 hc_rate;
+	u32 info_skip;
 	/*
 	 * This capability allows the device auto-bkops to be always enabled
 	 * except during suspend (both runtime and suspend).
@@ -1046,4 +1079,9 @@ static inline u8 ufshcd_scsi_to_upiu_lun(unsigned int scsi_lun)
 int ufshcd_dump_regs(struct ufs_hba *hba, size_t offset, size_t len,
 		     const char *prefix);
 
+static inline void ufshcd_vops_clk_hareware_init_notify(struct ufs_hba *hba)
+{
+	if (hba->vops && hba->vops->clk_hareware_init_notify)
+		hba->vops->clk_hareware_init_notify();
+}
 #endif /* End of Header */

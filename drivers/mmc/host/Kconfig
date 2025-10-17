@@ -209,6 +209,23 @@ config MMC_SDHCI_CNS3XXX
 
 	  If unsure, say N.
 
+config MMC_SDHCI_BSP
+	tristate "SDHCI support on the Vendor SoC"
+	depends on ARCH_SS528V100 || ARCH_SS625V100 || ARCH_SS524V100 ||\
+		   ARCH_SS522V100 || ARCH_SS919V100 || ARCH_SS318V100 ||\
+		   ARCH_SS918V100 || ARCH_SS101V200 || ARCH_SS101V500 ||\
+		   ARCH_SS101V300 || ARCH_SS101V600 || ARCH_SS015V100 ||\
+		   ARCH_SS013V100 || ARCH_SS615V100 || ARCH_SS928V100 ||\
+		   ARCH_SS927V100 || ARCH_SS522V101
+	depends on MMC_SDHCI_PLTFM
+	select MMC_SDHCI_IO_ACCESSORS
+	help
+	  This selects the SDHCI support for Vendor System-on-Chip devices.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config MMC_SDHCI_ESDHC_IMX
 	tristate "SDHCI support for the Freescale eSDHC/uSDHC i.MX controller"
 	depends on ARCH_MXC
@@ -943,3 +960,18 @@ config MMC_SDHCI_OMAP
 	  If you have a controller with this interface, say Y or M here.
 
 	  If unsure, say N.
+
+config MMC_CQ_HCI
+	tristate "Command Queue Support"
+	depends on HAS_DMA
+	help
+	  This selects the Command Queue Host Controller Interface (CQHCI)
+	  support present in host controllers of Qualcomm Technologies, Inc
+	  amongst others.
+	  This controller supports eMMC devices with command queue support.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+source "drivers/mmc/host/mci/Kconfig"

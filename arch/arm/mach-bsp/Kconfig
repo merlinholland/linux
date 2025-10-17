@@ -1,0 +1,231 @@
+config ARCH_BSP
+	bool "Vendor SoC Support"
+	select ARM_AMBA
+	select ARM_GIC if ARCH_MULTI_V7 && !ARCH_SS318V100 && !ARCH_SS918V100 && !ARCH_SS013V100
+	select ARM_VIC if ARCH_MULTI_V5
+	select ARM_TIMER_SP804
+	select POWER_RESET
+	select POWER_SUPPLY
+
+if ARCH_BSP
+
+menu "Vendor platform type"
+
+config ARCH_SS524V100
+	bool "SS524V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_BSP
+	help
+		Support for SS524V100 Soc family.
+
+config ARCH_SS615V100
+	bool "SS615V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_BSP
+	help
+		Support for SS615V100 Soc family.
+
+config ARCH_SS522V100
+	bool "SS522V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_BSP
+	help
+		Support for SS522V100 Soc family.
+
+config ARCH_SS522V101
+	bool "SS522V101 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_BSP
+	help
+		Support for SS522V101 Soc family.
+config ARCH_SS812V100
+	bool "SS812V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS812V100 Soc family.
+
+config ARCH_SS813V100
+	bool "SS813V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS813V100 Soc family.
+
+config ARCH_SS101V200
+	bool "SS101V200 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS101V200 Soc family.
+
+config ARCH_SS101V500
+	bool "SS101V500 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS101V500 Soc family.
+
+config ARCH_SS101V300
+	bool "SS101V300 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS101V300 Soc family.
+
+config ARCH_SS101V600
+	bool "SS101V600 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS101V600 Soc family.
+config ARCH_SS312V100
+	bool "SS312V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS312V100 Soc family.
+
+config ARCH_SS313V100
+	bool "SS313V100 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+    select POWER_RESET_BSP
+	help
+		Support for SS313V100 Soc family.
+
+config ARCH_SS612V100
+	bool "SS612V100 Cortex-A7(Single) family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	help
+		Support for SS612V100 Soc family.
+
+config ARCH_SS318V100
+	bool "SS318V100 Cortex-a53 family" if ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select PMC if SMP
+	select ARM_GIC_V3
+	help
+	  Support for SS318V100 Soc family
+if ARCH_SS318V100
+
+config PMC
+	bool
+	depends on ARCH_SS318V100
+	help
+	  support power control for SS318V100 Cortex-a53
+
+endif
+
+config ARCH_SS918V100
+	bool "SS918V100 Cortex-a53 family" if ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select NEED_MACH_IO_H if PCI
+	select PMC if SMP
+	select ARM_GIC_V3
+	help
+	  Support for SS918V100 Soc family
+if ARCH_SS918V100
+
+config PMC
+	bool
+	depends on ARCH_SS918V100
+	help
+	  support power control for SS918V100 Cortex-a53
+
+endif
+
+config ARCH_SS013V100
+	bool "SS013V100 Cortex-a53 family" if ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select NEED_MACH_IO_H if PCI
+	select PMC if SMP
+	select ARM_GIC_V3
+	help
+	  Support for SS013V100 Soc family
+if ARCH_SS013V100
+
+config PMC
+	bool
+	depends on ARCH_SS013V100
+	help
+	  support power control for SS013V100 Cortex-a53
+
+endif
+
+config ARCH_BSP_AMP
+	bool "Vendor AMP solution support"
+      depends on ARCH_SS318V100 || ARCH_SS918V100 || ARCH_SS812V100 || ARCH_SS813V100 || ARCH_SS312V100 || ARCH_SS313V100 || ARCH_SS011V100 || ARCH_SS012V100 || ARCH_SS013V100
+	help
+	  support for Vendor AMP solution
+
+config BSP_MC
+	bool "Vendor mc platform solution"
+	default n
+	help
+	  support for Vendor mc platform solution
+
+config AMP_ZRELADDR
+	hex 'amp zreladdr'
+	depends on ARCH_BSP_AMP
+	default "0x32008000" if ARCH_SS318V100 || ARCH_SS918V100 || ARCH_SS013V100
+	default "0x82008000" if ARCH_SS812V100 || ARCH_SS813V100 || ARCH_SS312V100 || ARCH_SS313V100 || ARCH_SS011V100 || ARCH_SS012V100
+	default "0x42008000" if ARCH_SS101V200 || ARCH_SS101V500 || ARCH_SS101V300 || ARCH_SS101V600
+config BSP_ZRELADDR
+       hex 'zreladdr'
+       default "0x40008000" if ARCH_SS524V100
+       default "0x40008000" if ARCH_SS615V100
+       default "0x40008000" if ARCH_SS522V100
+       default "0x40008000" if ARCH_SS522V101
+       default "0x80008000" if ARCH_SS812V100
+       default "0x80008000" if ARCH_SS813V100
+       default "0x80008000" if ARCH_SS312V100
+       default "0x80008000" if ARCH_SS313V100
+       default "0x80008000" if ARCH_SS011V100
+       default "0x80008000" if ARCH_SS012V100
+       default "0x80008000" if ARCH_SS612V100
+       default "0x40008000" if ARCH_SS101V200 || ARCH_SS101V500 || ARCH_SS101V300 || ARCH_SS101V600
+       default "0x22008000" if ARCH_SS318V100 || ARCH_SS918V100 || ARCH_SS013V100
+
+config BSP_PARAMS_PHYS
+       hex 'params_phys'
+       default "0x00000100"
+
+config BSP_INITRD_PHYS
+       hex 'initrd_phys'
+       default "0x00800000"
+
+endmenu
+
+endif

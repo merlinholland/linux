@@ -469,7 +469,7 @@ static int joydev_handle_JSIOCSAXMAP(struct joydev *joydev,
 
 	memcpy(joydev->abspam, abspam, len);
 
-	for (i = 0; i < joydev->nabs; i++)
+	for (i = 0; i < len && i < joydev->nabs; i++)
 		joydev->absmap[joydev->abspam[i]] = i;
 
  out:
@@ -500,7 +500,7 @@ static int joydev_handle_JSIOCSBTNMAP(struct joydev *joydev,
 
 	memcpy(joydev->keypam, keypam, len);
 
-	for (i = 0; i < joydev->nkey; i++)
+	for (i = 0; i < (len / 2) && i < joydev->nkey; i++)
 		joydev->keymap[keypam[i] - BTN_MISC] = i;
 
  out:
