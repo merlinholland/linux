@@ -30,7 +30,7 @@ OSDRV_CROSS_LDFLAGS := -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack
 GREEN = "\e[32;1m"
 DONE    = "\033[0m"
 
-BOOT_MEDIA ?= spi
+BOOT_MEDIA ?= emmc
 ifeq ($(BOOT_MEDIA), spi)
 MEDIUM_FLAG = _
 endif
