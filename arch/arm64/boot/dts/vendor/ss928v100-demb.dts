@@ -327,12 +327,12 @@
 
 &gmac {
 	phy-handle = <&ethphy>;
-	phy-mode = "rgmii";
+	phy-mode = "rmii";
 };
 
 &gmac1 {
 	phy-handle = <&ethphy1>;
-	phy-mode = "rgmii";
+	phy-mode = "rmii";
 };
 
 &pcie0 {
